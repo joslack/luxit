@@ -1,0 +1,75 @@
+{
+  "id": "whisperkit-large-v3-turbo",
+  "name": "WhisperKit (turbo, Core ML)",
+  "family": "whisper",
+  "protocol": "command",
+  "command": [
+    "python3",
+    "${BENCHMARK_ROOT}/workers/whisperkit_cli_bridge.py",
+    "--backend-id",
+    "whisperkit-large-v3-turbo",
+    "--audio",
+    "{audio}",
+    "--model",
+    "{model}",
+    "--model-path",
+    "{model_path}",
+    "--language",
+    "{language}",
+    "--prompt={prompt}",
+    "--fixed-language",
+    "en",
+    "--supports-prompt",
+    "{supports_prompt}",
+    "--supports-language-override",
+    "{supports_language_override}",
+    "--supports-word-timestamps",
+    "{supports_word_timestamps}",
+    "--word-timestamps",
+    "{word_timestamps}",
+    "--beam-size",
+    "{beam_size}",
+    "--best-of",
+    "{best_of}",
+    "--temperature",
+    "{temperature}",
+    "--whisperkit-binary",
+    "whisperkit-cli"
+  ],
+  "description": "WhisperKit CLI path for the turbo Core ML model. Uses CLI-per-call execution; treat as a cold process. Vocabulary prompts are disabled because this artifact returns empty transcripts when WhisperKit CLI receives --prompt.",
+  "model": "openai_whisper-large-v3-v20240930_turbo_632MB",
+  "model_path": "${MODEL_DIR}/whisperkit/openai_whisper-large-v3-v20240930_turbo_632MB",
+  "license": "MIT",
+  "source_url": "https://huggingface.co/argmaxinc/whisperkit-coreml",
+  "required_commands": [
+    "python3",
+    "whisperkit-cli"
+  ],
+  "required_paths": [
+    "${BENCHMARK_ROOT}/workers/whisperkit_cli_bridge.py",
+    "${MODEL_DIR}/whisperkit/openai_whisper-large-v3-v20240930_turbo_632MB",
+    "${MODEL_DIR}/whisperkit/argmaxinc/whisperkit-coreml"
+  ],
+  "required_python_modules": [],
+  "capabilities": {
+    "languages": [
+      "en"
+    ],
+    "prompt": false,
+    "word_timestamps": false,
+    "segment_timestamps": false,
+    "streaming": false,
+    "persistent": false
+  },
+  "options": {
+    "beam_size": 1,
+    "best_of": 1,
+    "temperature": 0,
+    "supports_prompt": false,
+    "supports_language_override": false,
+    "supports_word_timestamps": false,
+    "output_format": "json"
+  },
+  "environment": {},
+  "setup": "Install whisperkit-cli and keep the turbo Core ML folder under ${MODEL_DIR}/whisperkit before running benchmarks. Do not pass --prompt to this turbo artifact."
+}

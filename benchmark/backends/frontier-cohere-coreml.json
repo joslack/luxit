@@ -1,0 +1,61 @@
+{
+  "id": "frontier-cohere-coreml",
+  "name": "Cohere Transcribe 03-2026 Core ML",
+  "family": "frontier-asr",
+  "protocol": "command",
+  "command": [
+    "python",
+    "${BENCHMARK_ROOT}/scripts/frontier_command_adapter.py",
+    "cohere_coreml",
+    "--audio={audio}",
+    "--language={language}",
+    "--prompt={prompt}",
+    "--word-timestamps={word_timestamps}",
+    "--model={model}",
+    "--model-path={model_path}"
+  ],
+  "description": "Cohere command bridge for the documented 03-2026 Core ML path.",
+  "model": "cohere-transcribe-03-2026",
+  "model_path": "${COHERE_COREML_MODEL_DIR}",
+  "license": "Apache-2.0",
+  "source_url": "https://huggingface.co/CohereLabs/cohere-transcribe-03-2026",
+  "required_commands": [],
+  "required_paths": [
+    "${COHERE_COREML_RUNTIME}",
+    "${COHERE_COREML_MODEL_DIR}"
+  ],
+  "required_python_modules": [],
+  "capabilities": {
+    "languages": [
+      "en",
+      "fr",
+      "de",
+      "it",
+      "es",
+      "pt",
+      "el",
+      "nl",
+      "pl",
+      "ar",
+      "vi",
+      "zh",
+      "ja",
+      "ko"
+    ],
+    "prompt": false,
+    "word_timestamps": false,
+    "segment_timestamps": false,
+    "streaming": false,
+    "persistent": false
+  },
+  "options": {
+    "output_format": "json",
+    "timeout_seconds": 600,
+    "supports_translation": false,
+    "supports_diarization": false
+  },
+  "environment": {
+    "PYTHONUNBUFFERED": "1"
+  },
+  "setup": "Set COHERE_COREML_RUNTIME to a Cohere 03-2026 Core ML runtime executable and COHERE_COREML_MODEL_DIR to the model payload directory. Not supported: prompt/hotword interface, timestamps, streaming, diarization, translation flags."
+}

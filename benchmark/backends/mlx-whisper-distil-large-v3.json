@@ -1,0 +1,45 @@
+{
+  "id": "mlx-whisper-distil-large-v3",
+  "name": "MLX Whisper (distil-large-v3)",
+  "family": "whisper",
+  "protocol": "jsonl-worker",
+  "command": [
+    "python3",
+    "${BENCHMARK_ROOT}/workers/mlx_whisper_worker.py"
+  ],
+  "description": "Persistent MLX worker for mlx-community/distil-whisper-large-v3. English-only profile by design. Greedy beam-1, no timestamps.",
+  "model": "mlx-community/distil-whisper-large-v3",
+  "model_path": "${MODEL_DIR}/mlx/distil-whisper-large-v3",
+  "license": "MIT",
+  "source_url": "https://huggingface.co/mlx-community/distil-whisper-large-v3",
+  "required_commands": [
+    "python3"
+  ],
+  "required_paths": [
+    "${BENCHMARK_ROOT}/workers/mlx_whisper_worker.py",
+    "${MODEL_DIR}/mlx/distil-whisper-large-v3"
+  ],
+  "required_python_modules": [
+    "mlx_audio"
+  ],
+  "capabilities": {
+    "languages": [
+      "en"
+    ],
+    "prompt": true,
+    "word_timestamps": false,
+    "segment_timestamps": false,
+    "streaming": false,
+    "persistent": true
+  },
+  "options": {
+    "engine": "mlx_audio",
+    "language_mode": "en-only",
+    "beam_size": 1,
+    "best_of": 1,
+    "temperature": 0,
+    "supports_word_timestamps": false
+  },
+  "environment": {},
+  "setup": "Keep distil-large-v3 MLX artifact under ${MODEL_DIR}/mlx. No benchmark-triggered download."
+}

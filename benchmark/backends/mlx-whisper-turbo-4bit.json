@@ -1,0 +1,45 @@
+{
+  "id": "mlx-whisper-turbo-4bit",
+  "name": "MLX Whisper (large-v3-turbo 4-bit)",
+  "family": "whisper",
+  "protocol": "jsonl-worker",
+  "command": [
+    "python3",
+    "${BENCHMARK_ROOT}/workers/mlx_whisper_worker.py"
+  ],
+  "description": "Persistent MLX-Audio worker using a 4-bit Whisper large-v3-turbo conversion. The local snapshot is loaded once per cold lifecycle.",
+  "model": "mlx-community/whisper-large-v3-turbo-asr-4bit",
+  "model_path": "${MODEL_DIR}/mlx/whisper-large-v3-turbo-asr-4bit",
+  "license": "MIT",
+  "source_url": "https://huggingface.co/mlx-community/whisper-large-v3-turbo-asr-4bit",
+  "required_commands": [
+    "python3"
+  ],
+  "required_paths": [
+    "${BENCHMARK_ROOT}/workers/mlx_whisper_worker.py",
+    "${MODEL_DIR}/mlx/whisper-large-v3-turbo-asr-4bit/model.safetensors"
+  ],
+  "required_python_modules": [
+    "mlx_audio"
+  ],
+  "capabilities": {
+    "languages": [
+      "en"
+    ],
+    "prompt": true,
+    "word_timestamps": false,
+    "segment_timestamps": false,
+    "streaming": false,
+    "persistent": true
+  },
+  "options": {
+    "engine": "mlx_audio",
+    "language_mode": "multilingual",
+    "beam_size": 1,
+    "best_of": 1,
+    "temperature": 0,
+    "supports_word_timestamps": false
+  },
+  "environment": {},
+  "setup": "Run the benchmark through benchmark/.venv so mlx-audio is available; the local 4-bit snapshot lives under ${MODEL_DIR}/mlx."
+}

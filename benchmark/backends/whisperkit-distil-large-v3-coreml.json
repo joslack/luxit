@@ -1,0 +1,75 @@
+{
+  "id": "whisperkit-distil-large-v3",
+  "name": "WhisperKit (distil-large-v3, Core ML)",
+  "family": "whisper",
+  "protocol": "command",
+  "command": [
+    "python3",
+    "${BENCHMARK_ROOT}/workers/whisperkit_cli_bridge.py",
+    "--backend-id",
+    "whisperkit-distil-large-v3",
+    "--audio",
+    "{audio}",
+    "--model",
+    "{model}",
+    "--model-path",
+    "{model_path}",
+    "--language",
+    "{language}",
+    "--prompt={prompt}",
+    "--fixed-language",
+    "en",
+    "--supports-prompt",
+    "{supports_prompt}",
+    "--supports-language-override",
+    "{supports_language_override}",
+    "--supports-word-timestamps",
+    "{supports_word_timestamps}",
+    "--word-timestamps",
+    "{word_timestamps}",
+    "--beam-size",
+    "{beam_size}",
+    "--best-of",
+    "{best_of}",
+    "--temperature",
+    "{temperature}",
+    "--whisperkit-binary",
+    "whisperkit-cli"
+  ],
+  "description": "WhisperKit CLI path for distil-large-v3 Core ML model. English-only profile. Cold process behavior.",
+  "model": "distil-whisper_distil-large-v3_594MB",
+  "model_path": "${MODEL_DIR}/whisperkit/distil-whisper_distil-large-v3_594MB",
+  "license": "MIT",
+  "source_url": "https://huggingface.co/argmaxinc/whisperkit-coreml",
+  "required_commands": [
+    "python3",
+    "whisperkit-cli"
+  ],
+  "required_paths": [
+    "${BENCHMARK_ROOT}/workers/whisperkit_cli_bridge.py",
+    "${MODEL_DIR}/whisperkit/distil-whisper_distil-large-v3_594MB",
+    "${MODEL_DIR}/whisperkit/argmaxinc/whisperkit-coreml"
+  ],
+  "required_python_modules": [],
+  "capabilities": {
+    "languages": [
+      "en"
+    ],
+    "prompt": true,
+    "word_timestamps": false,
+    "segment_timestamps": false,
+    "streaming": false,
+    "persistent": false
+  },
+  "options": {
+    "beam_size": 1,
+    "best_of": 1,
+    "temperature": 0,
+    "supports_prompt": true,
+    "supports_language_override": false,
+    "supports_word_timestamps": false,
+    "output_format": "json"
+  },
+  "environment": {},
+  "setup": "Keep distil-large-v3 Core ML artifact under ${MODEL_DIR}/whisperkit before benchmark runs."
+}

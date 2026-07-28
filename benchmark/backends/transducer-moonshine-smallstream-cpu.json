@@ -1,0 +1,50 @@
+{
+  "id": "transducer-moonshine-smallstream-en-cpu",
+  "name": "Moonshine Small Streaming EN (CPU)",
+  "family": "moonshine",
+  "protocol": "jsonl-worker",
+  "command": [
+    "python3",
+    "${BENCHMARK_ROOT}/workers/transducer_moonshine_worker.py"
+  ],
+  "description": "Moonshine small-streaming English model with CPU execution provider.",
+  "model": "moonshine-smallstreaming-en",
+  "model_path": "${MODEL_DIR}/moonshine/en/small_streaming/model.int8.onnx",
+  "license": "MIT + Moonshine community license where applicable",
+  "source_url": "https://github.com/moonshine-ai/moonshine",
+  "required_commands": [
+    "python3"
+  ],
+  "required_paths": [
+    "${MODEL_DIR}/moonshine/en/small_streaming/model.int8.onnx",
+    "Resources/models/moonshine/en/small_streaming/model.int8.onnx"
+  ],
+  "required_python_modules": [
+    "moonshine_voice"
+  ],
+  "capabilities": {
+    "languages": [
+      "en"
+    ],
+    "prompt": false,
+    "word_timestamps": true,
+    "segment_timestamps": true,
+    "streaming": true,
+    "persistent": true
+  },
+  "options": {
+    "model_arch": "smallStreaming",
+    "model_path": "${MODEL_DIR}/moonshine/en/small_streaming",
+    "ort_providers": "CPU",
+    "supports_prompt": false,
+    "supports_language_override": false,
+    "supports_word_timestamps": true,
+    "supports_streaming": true,
+    "supports_hotwords": false,
+    "supports_end_of_utterance": false
+  },
+  "environment": {
+    "MOONSHINE_WORKER_MODE": "offline"
+  },
+  "setup": "Install moonshine-voice and keep model artifacts local to ${MODEL_DIR}/moonshine/en/small_streaming."
+}

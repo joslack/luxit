@@ -1,0 +1,11 @@
+.build/
+dist/
+*.caf
+*.wav
+.DS_Store
+benchmark/data/
+benchmark/models/
+benchmark/.venv/
+benchmark/**/__pycache__/
+benchmark-ui/.wrangler/
+benchmark-ui/dist/

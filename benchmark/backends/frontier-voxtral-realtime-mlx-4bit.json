@@ -1,0 +1,77 @@
+{
+  "id": "frontier-voxtral-realtime-mlx-4bit",
+  "name": "Voxtral Mini 4B Realtime MLX (4-bit)",
+  "family": "frontier-asr",
+  "protocol": "jsonl-worker",
+  "command": [
+    "python",
+    "${BENCHMARK_ROOT}/workers/frontier_asr_jsonl_worker.py"
+  ],
+  "description": "Voxtral causal streaming profile using MLX-Audio 4-bit conversion.",
+  "model": "mlx-community/Voxtral-Mini-4B-Realtime-2602-4bit",
+  "model_path": "${MODEL_DIR}/voxtral-realtime-4bit",
+  "license": "Apache-2.0",
+  "source_url": "https://huggingface.co/mistralai/Voxtral-Mini-4B-Realtime-2602",
+  "required_commands": [],
+  "required_paths": [
+    "${MODEL_DIR}/voxtral-realtime-4bit"
+  ],
+  "required_python_modules": [
+    "mlx_audio"
+  ],
+  "capabilities": {
+    "languages": [
+      "en",
+      "es",
+      "fr",
+      "pt",
+      "hi",
+      "de",
+      "nl",
+      "it",
+      "ar",
+      "ru",
+      "zh",
+      "ja",
+      "ko"
+    ],
+    "prompt": false,
+    "word_timestamps": false,
+    "segment_timestamps": false,
+    "streaming": true,
+    "persistent": true
+  },
+  "options": {
+    "runtime": "mlx_audio",
+    "backend_profile": "voxtral_mlx",
+    "model": "mlx-community/Voxtral-Mini-4B-Realtime-2602-4bit",
+    "supported_languages": [
+      "en",
+      "es",
+      "fr",
+      "pt",
+      "hi",
+      "de",
+      "nl",
+      "it",
+      "ar",
+      "ru",
+      "zh",
+      "ja",
+      "ko"
+    ],
+    "streaming_delay_ms": 480,
+    "supports_prompt": false,
+    "supports_word_timestamps": false,
+    "supports_segment_timestamps": false,
+    "supports_streaming": true,
+    "supports_translation": false,
+    "supports_diarization": false,
+    "timeout_seconds": 600,
+    "load_timeout_seconds": 1200
+  },
+  "environment": {
+    "PYTHONUNBUFFERED": "1"
+  },
+  "setup": "Install MLX-Audio and place the 4-bit Voxtral conversion in MODEL_DIR. Streaming delay is configurable via request `streaming_delay_ms`/`streaming`; word timestamps and translation unsupported."
+}

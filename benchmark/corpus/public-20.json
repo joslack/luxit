@@ -1,0 +1,147 @@
+{
+  "name": "Public dictation smoke test",
+  "version": 1,
+  "description": "Twenty neutral utterances for public speech-to-text smoke tests. Store personalized corpora under benchmark/data so they remain local.",
+  "cases": [
+    {
+      "id": "technical-01",
+      "category": "Technical names",
+      "text": "The speech recognizer should stay warm between consecutive recordings.",
+      "keywords": ["speech recognizer", "stay warm", "recordings"],
+      "note": "Inference lifecycle vocabulary."
+    },
+    {
+      "id": "technical-02",
+      "category": "Technical names",
+      "text": "Try Parakeet TDT through FluidAudio on the Apple Neural Engine.",
+      "keywords": ["Parakeet TDT", "FluidAudio", "Apple Neural Engine"],
+      "note": "Uncommon framework names."
+    },
+    {
+      "id": "technical-03",
+      "category": "Technical names",
+      "text": "The C bridge links libwhisper, ggml, Accelerate, and Metal.",
+      "keywords": ["C bridge", "libwhisper", "ggml", "Accelerate", "Metal"],
+      "note": "Library spellings."
+    },
+    {
+      "id": "technical-04",
+      "category": "Technical names",
+      "text": "Compare Core ML, MLX, and whisper.cpp through the same benchmark contract.",
+      "keywords": ["Core ML", "MLX", "whisper.cpp", "benchmark contract"],
+      "note": "Acronyms and punctuation."
+    },
+    {
+      "id": "technical-05",
+      "category": "Technical names",
+      "text": "Use structured concurrency for orchestration, but measure inference inside the adapter.",
+      "keywords": ["structured concurrency", "inference", "adapter"],
+      "note": "Technical prose."
+    },
+    {
+      "id": "numbers-01",
+      "category": "Numbers and commands",
+      "text": "The benchmark server has eight cores and sixteen gigabytes of memory.",
+      "keywords": ["eight cores", "sixteen gigabytes", "memory"],
+      "note": "Generic hardware quantities."
+    },
+    {
+      "id": "numbers-02",
+      "category": "Numbers and commands",
+      "text": "Set the beam size to five, the temperature to zero, and the timeout to sixty seconds.",
+      "keywords": ["beam size", "five", "temperature", "zero", "sixty seconds"],
+      "note": "Several numeric values."
+    },
+    {
+      "id": "numbers-03",
+      "category": "Numbers and commands",
+      "text": "Run slash user slash local slash bin slash transcribe with model version three.",
+      "keywords": ["user", "local", "bin", "transcribe", "version three"],
+      "note": "Spoken command path."
+    },
+    {
+      "id": "numbers-04",
+      "category": "Numbers and commands",
+      "text": "The recording is sixteen kilohertz mono PCM, not forty-eight kilohertz stereo.",
+      "keywords": ["sixteen kilohertz", "mono PCM", "forty-eight kilohertz", "stereo"],
+      "note": "Audio formats."
+    },
+    {
+      "id": "numbers-05",
+      "category": "Numbers and commands",
+      "text": "Benchmark twenty examples with one warm-up and three measured repetitions.",
+      "keywords": ["twenty examples", "one warm-up", "three measured repetitions"],
+      "note": "Benchmark parameters."
+    },
+    {
+      "id": "natural-01",
+      "category": "Natural work talk",
+      "text": "Could we keep a clean boundary so another model can plug in without confusion?",
+      "keywords": ["clean boundary", "plug in", "without confusion"],
+      "note": "Conversational question."
+    },
+    {
+      "id": "natural-02",
+      "category": "Natural work talk",
+      "text": "Let's keep the interface generic while preserving the performance of each model.",
+      "keywords": ["interface", "generic", "performance"],
+      "note": "Contraction and technical language."
+    },
+    {
+      "id": "natural-03",
+      "category": "Natural work talk",
+      "text": "A public benchmark may not reflect the acoustics of a quiet home office.",
+      "keywords": ["public benchmark", "acoustics", "home office"],
+      "note": "Natural explanatory prose."
+    },
+    {
+      "id": "natural-04",
+      "category": "Natural work talk",
+      "text": "Return the result quickly, but preserve every unusual technical term.",
+      "keywords": ["quickly", "preserve", "technical term"],
+      "note": "Accuracy-versus-speed intent."
+    },
+    {
+      "id": "natural-05",
+      "category": "Natural work talk",
+      "text": "If the model is already warm, the interface should separate that from cold-start latency.",
+      "keywords": ["already warm", "interface", "cold-start latency"],
+      "note": "Hyphenated term."
+    },
+    {
+      "id": "disfluency-01",
+      "category": "Slang and disfluency",
+      "text": "Okay, yeah, that was fast, but did it preserve all the technical terms?",
+      "keywords": ["that was fast", "preserve", "technical terms"],
+      "note": "Informal phrasing."
+    },
+    {
+      "id": "disfluency-02",
+      "category": "Slang and disfluency",
+      "text": "Um, I might add a few sample sentences to improve the next test run.",
+      "keywords": ["sample sentences", "improve", "test run"],
+      "note": "Leading filler word."
+    },
+    {
+      "id": "disfluency-03",
+      "category": "Slang and disfluency",
+      "text": "Can you restart the local worker, or should I export the logs myself?",
+      "keywords": ["restart", "local worker", "export", "logs"],
+      "note": "Question with two clauses."
+    },
+    {
+      "id": "disfluency-04",
+      "category": "Slang and disfluency",
+      "text": "This doesn't need to be academically perfect; it needs to be a useful gut check.",
+      "keywords": ["doesn't", "academically perfect", "gut check"],
+      "note": "Contraction and idiom."
+    },
+    {
+      "id": "disfluency-05",
+      "category": "Slang and disfluency",
+      "text": "Wait, I said twenty examples, so let's make every recording useful.",
+      "keywords": ["twenty examples", "every recording", "useful"],
+      "note": "Self-correction and contraction."
+    }
+  ]
+}

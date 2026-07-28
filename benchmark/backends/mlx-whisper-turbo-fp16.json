@@ -1,0 +1,45 @@
+{
+  "id": "mlx-whisper-turbo-fp16",
+  "name": "MLX Whisper (large-v3-turbo ASR fp16)",
+  "family": "whisper",
+  "protocol": "jsonl-worker",
+  "command": [
+    "python3",
+    "${BENCHMARK_ROOT}/workers/mlx_whisper_worker.py"
+  ],
+  "description": "Persistent MLX worker for mlx-community/whisper-large-v3-turbo-asr-fp16. Greedy, English-first request surface with optional language override.",
+  "model": "mlx-community/whisper-large-v3-turbo-asr-fp16",
+  "model_path": "${MODEL_DIR}/mlx/whisper-large-v3-turbo-asr-fp16",
+  "license": "MIT",
+  "source_url": "https://huggingface.co/mlx-community/whisper-large-v3-turbo-asr-fp16",
+  "required_commands": [
+    "python3"
+  ],
+  "required_paths": [
+    "${BENCHMARK_ROOT}/workers/mlx_whisper_worker.py",
+    "${MODEL_DIR}/mlx/whisper-large-v3-turbo-asr-fp16"
+  ],
+  "required_python_modules": [
+    "mlx_audio"
+  ],
+  "capabilities": {
+    "languages": [
+      "en"
+    ],
+    "prompt": true,
+    "word_timestamps": false,
+    "segment_timestamps": false,
+    "streaming": false,
+    "persistent": true
+  },
+  "options": {
+    "engine": "mlx_audio",
+    "language_mode": "multilingual",
+    "beam_size": 1,
+    "best_of": 1,
+    "temperature": 0,
+    "supports_word_timestamps": false
+  },
+  "environment": {},
+  "setup": "Keep MLX Whisper ASR fp16 artifact under ${MODEL_DIR}/mlx and ensure mlx_audio is installed. No download in benchmark run."
+}

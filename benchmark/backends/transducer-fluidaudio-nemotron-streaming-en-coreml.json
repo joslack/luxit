@@ -1,0 +1,55 @@
+{
+  "id": "transducer-fluidaudio-nemotron-streaming-en-coreml",
+  "name": "FluidAudio Nemotron Speech Streaming EN 0.6B Core ML",
+  "family": "nemotron",
+  "protocol": "jsonl-worker",
+  "command": [
+    "python3",
+    "${BENCHMARK_ROOT}/workers/transducer_fluidaudio_worker.py"
+  ],
+  "description": "Nemotron English 0.6B streaming path through FluidAudio Core ML artifacts.",
+  "model": "nemotron-speech-streaming-en-0.6b",
+  "model_path": "${MODEL_DIR}/fluidaudio/nemotron-speech-streaming-en-0.6b-coreml",
+  "license": "NVIDIA Open Model License + Apache-2.0 runtime",
+  "source_url": "https://huggingface.co/FluidInference/nemotron-speech-streaming-en-0.6b-coreml",
+  "required_commands": [
+    "fluidaudiocli"
+  ],
+  "required_paths": [
+    "${MODEL_DIR}/fluidaudio/nemotron-speech-streaming-en-0.6b-coreml",
+    "Resources/models/fluidaudio/nemotron-speech-streaming-en-0.6b-coreml"
+  ],
+  "required_python_modules": [],
+  "capabilities": {
+    "languages": [
+      "en"
+    ],
+    "prompt": false,
+    "word_timestamps": false,
+    "segment_timestamps": false,
+    "streaming": true,
+    "persistent": true
+  },
+  "options": {
+    "cli": "fluidaudiocli",
+    "model_version": "nemotron-speech-streaming-en",
+    "supports_prompt": false,
+    "supported_languages": [
+      "en"
+    ],
+    "supports_language_override": false,
+    "supports_word_timestamps": false,
+    "supports_streaming": true,
+    "streaming_variants": [
+      560,
+      1120,
+      1600
+    ],
+    "default_streaming_variant_ms": 1120,
+    "output_mode": "streaming"
+  },
+  "environment": {
+    "FLUIDAUDIO_WORKER_MODE": "nemotron_streaming"
+  },
+  "setup": "Keep Nemotron EN Core ML artifacts local to ${MODEL_DIR}/fluidaudio and select explicit streaming variant IDs."
+}

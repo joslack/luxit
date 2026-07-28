@@ -1,0 +1,57 @@
+{
+  "id": "transducer-sherpa-onnx-zipformer-en-20m-2023-02-17",
+  "name": "sherpa-onnx Streaming Zipformer EN 20M (2023-02-17)",
+  "family": "sherpa-onnx",
+  "protocol": "jsonl-worker",
+  "command": [
+    "python3",
+    "${BENCHMARK_ROOT}/workers/transducer_sherpa_worker.py"
+  ],
+  "description": "Streaming Zipformer EN 20M reference baseline through sherpa-onnx.",
+  "model": "csukuangfj/sherpa-onnx-streaming-zipformer-en-20M-2023-02-17",
+  "model_path": "${MODEL_DIR}/sherpa-onnx/en/streaming-zipformer-20m-2023-02-17",
+  "license": "Apache-2.0 (runtime) + model license",
+  "source_url": "https://k2-fsa.github.io/sherpa/onnx/pretrained_models/streaming-transducer/index.html",
+  "required_commands": [
+    "python3"
+  ],
+  "required_paths": [
+    "${MODEL_DIR}/sherpa-onnx/en/streaming-zipformer-20m-2023-02-17/encoder.onnx",
+    "${MODEL_DIR}/sherpa-onnx/en/streaming-zipformer-20m-2023-02-17/decoder.onnx",
+    "${MODEL_DIR}/sherpa-onnx/en/streaming-zipformer-20m-2023-02-17/joiner.onnx",
+    "${MODEL_DIR}/sherpa-onnx/en/streaming-zipformer-20m-2023-02-17/tokens.txt",
+    "Resources/models/sherpa-onnx/en/streaming-zipformer-20m-2023-02-17"
+  ],
+  "required_python_modules": [
+    "sherpa_onnx"
+  ],
+  "capabilities": {
+    "languages": [
+      "en"
+    ],
+    "prompt": false,
+    "word_timestamps": false,
+    "segment_timestamps": false,
+    "streaming": true,
+    "persistent": true
+  },
+  "options": {
+    "encoder_path": "${MODEL_DIR}/sherpa-onnx/en/streaming-zipformer-20m-2023-02-17/encoder.onnx",
+    "decoder_path": "${MODEL_DIR}/sherpa-onnx/en/streaming-zipformer-20m-2023-02-17/decoder.onnx",
+    "joiner_path": "${MODEL_DIR}/sherpa-onnx/en/streaming-zipformer-20m-2023-02-17/joiner.onnx",
+    "tokens_path": "${MODEL_DIR}/sherpa-onnx/en/streaming-zipformer-20m-2023-02-17/tokens.txt",
+    "provider": "cpu",
+    "num_threads": 4,
+    "decoding_method": "greedy_search",
+    "supports_prompt": false,
+    "supports_language_override": false,
+    "supports_word_timestamps": false,
+    "supports_streaming": true,
+    "supports_hotwords": true,
+    "supports_end_of_utterance": true
+  },
+  "environment": {
+    "SHERPA_ONNX_WORKER_MODE": "streaming"
+  },
+  "setup": "Keep encoder/decoder/joiner/tokens files under ${MODEL_DIR}/sherpa-onnx/en/streaming-zipformer-20m-2023-02-17 and do not download inside benchmark runs."
+}

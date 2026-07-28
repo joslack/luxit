@@ -1,0 +1,72 @@
+{
+  "id": "frontier-qwen3-asr-mlx-0.6b",
+  "name": "Qwen3-ASR 0.6B MLX",
+  "family": "frontier-asr",
+  "protocol": "jsonl-worker",
+  "command": [
+    "python",
+    "${BENCHMARK_ROOT}/workers/frontier_asr_jsonl_worker.py"
+  ],
+  "description": "Persistent MLX worker for Qwen3-ASR 0.6B with optional forced-aligner timestamps.",
+  "model": "Qwen/Qwen3-ASR-0.6B",
+  "model_path": "${MODEL_DIR}/qwen3-asr-0.6b/mlx-8bit",
+  "license": "Apache-2.0",
+  "source_url": "https://github.com/QwenLM/Qwen3-ASR",
+  "required_commands": [],
+  "required_paths": [
+    "${MODEL_DIR}/qwen3-asr-0.6b"
+  ],
+  "required_python_modules": [
+    "mlx_qwen3_asr"
+  ],
+  "capabilities": {
+    "languages": [
+      "en",
+      "zh",
+      "fr",
+      "de",
+      "es",
+      "pt",
+      "ja",
+      "ko",
+      "ru",
+      "it"
+    ],
+    "prompt": true,
+    "word_timestamps": true,
+    "segment_timestamps": false,
+    "streaming": true,
+    "persistent": true
+  },
+  "options": {
+    "runtime": "qwen3_mlx",
+    "backend_profile": "qwen3_asr_mlx",
+    "model": "Qwen/Qwen3-ASR-0.6B",
+    "alignment_model": "Qwen/Qwen3-ForcedAligner-0.6B",
+    "alignment_model_path": "${MODEL_DIR}/qwen3-asr-alignment-0.6b",
+    "supported_languages": [
+      "en",
+      "zh",
+      "fr",
+      "de",
+      "es",
+      "pt",
+      "ja",
+      "ko",
+      "ru",
+      "it"
+    ],
+    "supports_prompt": true,
+    "supports_word_timestamps": true,
+    "supports_segment_timestamps": false,
+    "supports_streaming": true,
+    "supports_translation": false,
+    "supports_diarization": false,
+    "load_timeout_seconds": 900,
+    "timeout_seconds": 600
+  },
+  "environment": {
+    "PYTHONUNBUFFERED": "1"
+  },
+  "setup": "Install mlx_qwen3_asr and provide both Qwen3-ASR and 0.6B forced-aligner artifacts under MODEL_DIR. If aligner files are absent, word-timestamps requests will return an explicit error."
+}

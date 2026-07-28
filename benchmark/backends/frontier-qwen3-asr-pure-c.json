@@ -1,0 +1,58 @@
+{
+  "id": "frontier-qwen3-asr-pure-c",
+  "name": "Qwen3-ASR 0.6B/1.7B pure-C/Accelerate",
+  "family": "frontier-asr",
+  "protocol": "command",
+  "command": [
+    "python",
+    "${BENCHMARK_ROOT}/scripts/frontier_command_adapter.py",
+    "qwen3_asr_pure_c",
+    "--audio={audio}",
+    "--language={language}",
+    "--prompt={prompt}",
+    "--word-timestamps={word_timestamps}",
+    "--model={model}",
+    "--model-path={model_path}"
+  ],
+  "description": "Pure-C/Accelerate fallback path for Qwen3-ASR.",
+  "model": "qwen3-asr",
+  "model_path": "${MODEL_DIR}/qwen3-asr-pure-c",
+  "license": "Apache-2.0 + MIT runtime",
+  "source_url": "https://github.com/antirez/qwen-asr",
+  "required_commands": [
+    "qwen_asr"
+  ],
+  "required_paths": [
+    "${MODEL_DIR}/qwen3-asr-pure-c"
+  ],
+  "required_python_modules": [],
+  "capabilities": {
+    "languages": [
+      "en",
+      "zh",
+      "fr",
+      "de",
+      "es",
+      "pt",
+      "ja",
+      "ko",
+      "ru",
+      "it"
+    ],
+    "prompt": true,
+    "word_timestamps": false,
+    "segment_timestamps": false,
+    "streaming": true,
+    "persistent": false
+  },
+  "options": {
+    "output_format": "json",
+    "timeout_seconds": 600,
+    "supports_translation": false,
+    "supports_diarization": false
+  },
+  "environment": {
+    "PYTHONUNBUFFERED": "1"
+  },
+  "setup": "Build/install the antirez qwen-asr binary and set QWEN3_C_RUNTIME if it is not discoverable on PATH. Set MODEL_DIR/qwen3-asr-pure-c to a matching BF16 safetensor directory. Prompt/hotword and streaming supported; timestamps/translation/diarization not supported."
+}

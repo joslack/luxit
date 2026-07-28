@@ -1,0 +1,54 @@
+{
+  "id": "whisper-cpp-fast-greedy-v3-turbo-q5_0",
+  "name": "whisper.cpp fast greedy (large-v3-turbo q5_0)",
+  "family": "whisper",
+  "protocol": "jsonl-worker",
+  "command": [
+    "python3",
+    "${BENCHMARK_ROOT}/workers/whisper_cpp_server_worker.py"
+  ],
+  "description": "Persistent whisper-server with fast greedy profile (best_of=1, no fallback) on large-v3-turbo q5_0.",
+  "model": "ggml-large-v3-turbo-q5_0.bin",
+  "model_path": "${MODEL_DIR}/ggml/ggml-large-v3-turbo-q5_0.bin",
+  "license": "MIT",
+  "source_url": "https://huggingface.co/ggerganov/whisper.cpp",
+  "required_commands": [
+    "python3",
+    "whisper-server"
+  ],
+  "required_paths": [
+    "/opt/homebrew/bin/whisper-server",
+    "/opt/homebrew/opt/whisper-cpp/lib/libwhisper.dylib",
+    "${BENCHMARK_ROOT}/workers/whisper_cpp_server_worker.py",
+    "${MODEL_DIR}/ggml/ggml-large-v3-turbo-q5_0.bin"
+  ],
+  "required_python_modules": [],
+  "capabilities": {
+    "languages": [
+      "en"
+    ],
+    "prompt": true,
+    "word_timestamps": false,
+    "segment_timestamps": false,
+    "streaming": false,
+    "persistent": true
+  },
+  "options": {
+    "threads": 6,
+    "beam_size": 1,
+    "best_of": 1,
+    "temperature": 0,
+    "temperature_fallback": false,
+    "no_context": true,
+    "no_timestamps": true,
+    "strategy": "greedy",
+    "supports_prompt": true,
+    "supports_language_override": false,
+    "supports_word_timestamps": false,
+    "flash_attention": true,
+    "whisper_server_binary": "/opt/homebrew/bin/whisper-server",
+    "output_format": "json"
+  },
+  "environment": {},
+  "setup": "Use installed Homebrew whisper.cpp and ggml-large-v3-turbo-q5_0.bin under ${MODEL_DIR}/ggml. No on-demand download."
+}

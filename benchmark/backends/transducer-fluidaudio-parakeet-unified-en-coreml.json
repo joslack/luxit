@@ -1,0 +1,56 @@
+{
+  "id": "transducer-fluidaudio-parakeet-unified-en-coreml",
+  "name": "FluidAudio Parakeet Unified EN 0.6B Core ML",
+  "family": "parakeet",
+  "protocol": "jsonl-worker",
+  "command": [
+    "python3",
+    "${BENCHMARK_ROOT}/workers/transducer_fluidaudio_worker.py"
+  ],
+  "description": "Parakeet Unified EN 0.6B Core ML batch and buffered-streaming path.",
+  "model": "parakeet-unified-en-0.6b",
+  "model_path": "${MODEL_DIR}/fluidaudio/parakeet-unified-en-0.6b-coreml",
+  "license": "NVIDIA Open Model License + Apache-2.0 runtime",
+  "source_url": "https://huggingface.co/FluidInference/parakeet-unified-en-0.6b-coreml",
+  "required_commands": [
+    "fluidaudiocli"
+  ],
+  "required_paths": [
+    "${MODEL_DIR}/fluidaudio/parakeet-unified-en-0.6b-coreml",
+    "Resources/models/fluidaudio/parakeet-unified-en-0.6b-coreml"
+  ],
+  "required_python_modules": [],
+  "capabilities": {
+    "languages": [
+      "en"
+    ],
+    "prompt": false,
+    "word_timestamps": true,
+    "segment_timestamps": true,
+    "streaming": true,
+    "persistent": true
+  },
+  "options": {
+    "cli": "fluidaudiocli",
+    "model_version": "parakeet-unified",
+    "supports_prompt": false,
+    "supported_languages": [
+      "en"
+    ],
+    "supports_language_override": false,
+    "supports_word_timestamps": true,
+    "supports_streaming": true,
+    "streaming_variants": [
+      320,
+      640,
+      1120,
+      2080
+    ],
+    "default_streaming_variant_ms": 1120,
+    "output_mode": "streaming"
+  },
+  "environment": {
+    "FLUIDAUDIO_WORKER_MODE": "unified_streaming"
+  },
+  "setup": "Keep Unified EN Core ML artifacts in ${MODEL_DIR}/fluidaudio and use explicit streaming variants."
+}

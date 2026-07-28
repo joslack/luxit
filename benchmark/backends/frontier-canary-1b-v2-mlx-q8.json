@@ -1,0 +1,101 @@
+{
+  "id": "frontier-canary-1b-v2-mlx-q8",
+  "name": "NVIDIA Canary 1B v2 MLX q8 (fallback)",
+  "family": "frontier-asr",
+  "protocol": "jsonl-worker",
+  "command": [
+    "python",
+    "${BENCHMARK_ROOT}/workers/frontier_asr_jsonl_worker.py"
+  ],
+  "description": "Canary fallback profile through MLX-Audio 8-bit/q8 route.",
+  "model": "Mediform/canary-1b-v2-mlx-q8",
+  "model_path": "${MODEL_DIR}/canary-1b-v2-mlx-q8",
+  "license": "CC-BY-4.0",
+  "source_url": "https://huggingface.co/nvidia/canary-1b-v2",
+  "required_commands": [],
+  "required_paths": [
+    "${MODEL_DIR}/canary-1b-v2-mlx-q8"
+  ],
+  "required_python_modules": [
+    "mlx_audio"
+  ],
+  "capabilities": {
+    "languages": [
+      "ca",
+      "cs",
+      "da",
+      "de",
+      "el",
+      "en",
+      "es",
+      "fi",
+      "fr",
+      "hu",
+      "it",
+      "lt",
+      "lv",
+      "mt",
+      "nl",
+      "no",
+      "pl",
+      "pt",
+      "ro",
+      "ru",
+      "sk",
+      "sl",
+      "sv",
+      "tr",
+      "uk",
+      "en"
+    ],
+    "prompt": false,
+    "word_timestamps": false,
+    "segment_timestamps": false,
+    "streaming": false,
+    "persistent": true
+  },
+  "options": {
+    "runtime": "mlx_audio_canary",
+    "backend_profile": "canary_mlx",
+    "model": "Mediform/canary-1b-v2-mlx-q8",
+    "supported_languages": [
+      "ca",
+      "cs",
+      "da",
+      "de",
+      "el",
+      "en",
+      "es",
+      "fi",
+      "fr",
+      "hu",
+      "it",
+      "lt",
+      "lv",
+      "mt",
+      "nl",
+      "no",
+      "pl",
+      "pt",
+      "ro",
+      "ru",
+      "sk",
+      "sl",
+      "sv",
+      "tr",
+      "uk"
+    ],
+    "supports_prompt": false,
+    "supports_word_timestamps": false,
+    "supports_segment_timestamps": false,
+    "supports_streaming": false,
+    "supports_translation": true,
+    "supports_diarization": false,
+    "timeout_seconds": 600,
+    "load_timeout_seconds": 1200
+  },
+  "environment": {
+    "PYTHONUNBUFFERED": "1"
+  },
+  "setup": "Install MLX-Audio and keep the Mediform 1B-v2 conversion under MODEL_DIR. Source/target language controls enable translation mode where supported; timestamps and streaming are not guaranteed for this adapter profile."
+}

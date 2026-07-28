@@ -1,0 +1,68 @@
+{
+  "id": "transducer-libparakeet-cli-v3-q8-0",
+  "name": "Parakeet TDT 0.6B v3 (libparakeet CPU Q8_0)",
+  "family": "parakeet",
+  "protocol": "jsonl-worker",
+  "command": [
+    "python3",
+    "${BENCHMARK_ROOT}/workers/transducer_libparakeet_worker.py"
+  ],
+  "description": "Persistent libparakeet worker using the Apple CPU/BLAS path as an explicit hardware control.",
+  "model": "ggml-parakeet-tdt-0.6b-v3-q8_0.bin",
+  "model_path": "${MODEL_DIR}/ggml/ggml-parakeet-tdt-0.6b-v3-q8_0.bin",
+  "license": "CC-BY-4.0",
+  "source_url": "https://huggingface.co/ggml-org/parakeet-GGUF",
+  "required_commands": [
+    "python3"
+  ],
+  "required_paths": [
+    "/opt/homebrew/opt/whisper-cpp/lib/libparakeet.dylib",
+    "/opt/homebrew/opt/ggml/lib/libggml.0.dylib",
+    "${MODEL_DIR}/ggml/ggml-parakeet-tdt-0.6b-v3-q8_0.bin"
+  ],
+  "required_python_modules": [],
+  "capabilities": {
+    "languages": [
+      "bg",
+      "cs",
+      "da",
+      "de",
+      "el",
+      "en",
+      "es",
+      "et",
+      "fi",
+      "fr",
+      "hr",
+      "hu",
+      "it",
+      "lv",
+      "lt",
+      "mt",
+      "nl",
+      "pl",
+      "pt",
+      "ro",
+      "ru",
+      "sk",
+      "sl",
+      "sv",
+      "uk",
+      "uk"
+    ],
+    "prompt": false,
+    "word_timestamps": true,
+    "segment_timestamps": true,
+    "streaming": false,
+    "persistent": true
+  },
+  "options": {
+    "threads": 4,
+    "no_gpu": true,
+    "supports_prompt": false,
+    "supports_language_override": true,
+    "supports_word_timestamps": true
+  },
+  "environment": {},
+  "setup": "Install Homebrew whisper-cpp; download ggml-parakeet-tdt-0.6b-v3-q8_0.bin under ${MODEL_DIR}/ggml and keep model artifacts outside git."
+}

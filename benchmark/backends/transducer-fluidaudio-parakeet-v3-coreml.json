@@ -1,0 +1,97 @@
+{
+  "id": "transducer-fluidaudio-parakeet-v3-coreml",
+  "name": "FluidAudio Parakeet TDT v3 Core ML",
+  "family": "parakeet",
+  "protocol": "jsonl-worker",
+  "command": [
+    "python3",
+    "${BENCHMARK_ROOT}/workers/transducer_fluidaudio_worker.py"
+  ],
+  "description": "FluidAudio Core ML path for multilingual Parakeet TDT v3 batch transcription.",
+  "model": "tdt-v3",
+  "model_path": "${MODEL_DIR}/fluidaudio/parakeet-tdt-0.6b-v3-coreml",
+  "license": "CC-BY-4.0 + Apache-2.0 runtime",
+  "source_url": "https://huggingface.co/FluidInference/parakeet-tdt-0.6b-v3-coreml",
+  "required_commands": [
+    "fluidaudiocli"
+  ],
+  "required_paths": [
+    "${MODEL_DIR}/fluidaudio/parakeet-tdt-0.6b-v3-coreml",
+    "Resources/models/fluidaudio/parakeet-tdt-0.6b-v3-coreml"
+  ],
+  "required_python_modules": [],
+  "capabilities": {
+    "languages": [
+      "bg",
+      "cs",
+      "da",
+      "de",
+      "el",
+      "en",
+      "es",
+      "et",
+      "fi",
+      "fr",
+      "hr",
+      "hu",
+      "it",
+      "lv",
+      "lt",
+      "mt",
+      "nl",
+      "pl",
+      "pt",
+      "ro",
+      "ru",
+      "sk",
+      "sl",
+      "sv",
+      "uk"
+    ],
+    "prompt": false,
+    "word_timestamps": true,
+    "segment_timestamps": true,
+    "streaming": false,
+    "persistent": true
+  },
+  "options": {
+    "cli": "fluidaudiocli",
+    "model_version": "tdt-v3",
+    "supports_prompt": false,
+    "supported_languages": [
+      "bg",
+      "cs",
+      "da",
+      "de",
+      "el",
+      "en",
+      "es",
+      "et",
+      "fi",
+      "fr",
+      "hr",
+      "hu",
+      "it",
+      "lv",
+      "lt",
+      "mt",
+      "nl",
+      "pl",
+      "pt",
+      "ro",
+      "ru",
+      "sk",
+      "sl",
+      "sv",
+      "uk"
+    ],
+    "supports_language_override": true,
+    "supports_word_timestamps": true,
+    "supports_streaming": false,
+    "output_mode": "batch"
+  },
+  "environment": {
+    "FLUIDAUDIO_WORKER_MODE": "coreml_batch"
+  },
+  "setup": "Keep FluidAudio Core ML artifacts in ${MODEL_DIR}/fluidaudio and pre-fetch the matching revision."
+}

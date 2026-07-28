@@ -1,0 +1,49 @@
+{
+  "id": "transducer-fluidaudio-parakeet-tdt-ctc-110m-coreml",
+  "name": "FluidAudio Parakeet TDT-CTC 110M Core ML",
+  "family": "parakeet",
+  "protocol": "jsonl-worker",
+  "command": [
+    "python3",
+    "${BENCHMARK_ROOT}/workers/transducer_fluidaudio_worker.py"
+  ],
+  "description": "English-only Parakeet CTC 110M Core ML path via FluidAudio CLI adapter.",
+  "model": "tdt-ctc-110m",
+  "model_path": "${MODEL_DIR}/fluidaudio/parakeet-tdt-ctc-110m-coreml",
+  "license": "CC-BY-4.0 + Apache-2.0 runtime",
+  "source_url": "https://huggingface.co/FluidInference/parakeet-tdt-ctc-110m-coreml",
+  "required_commands": [
+    "fluidaudiocli"
+  ],
+  "required_paths": [
+    "${MODEL_DIR}/fluidaudio/parakeet-tdt-ctc-110m-coreml",
+    "Resources/models/fluidaudio/parakeet-tdt-ctc-110m-coreml"
+  ],
+  "required_python_modules": [],
+  "capabilities": {
+    "languages": [
+      "en"
+    ],
+    "prompt": false,
+    "word_timestamps": false,
+    "segment_timestamps": false,
+    "streaming": false,
+    "persistent": true
+  },
+  "options": {
+    "cli": "fluidaudiocli",
+    "model_version": "tdt-ctc-110m",
+    "supports_prompt": false,
+    "supported_languages": [
+      "en"
+    ],
+    "supports_language_override": false,
+    "supports_word_timestamps": false,
+    "supports_streaming": false,
+    "output_mode": "batch"
+  },
+  "environment": {
+    "FLUIDAUDIO_WORKER_MODE": "ctc_batch"
+  },
+  "setup": "Keep the CTC 110M Core ML directory in ${MODEL_DIR}/fluidaudio and avoid implicit download during benchmark runs."
+}

@@ -1,0 +1,53 @@
+{
+  "id": "frontier-sensevoice-coreml-int8",
+  "name": "SenseVoice Small Core ML (int8)",
+  "family": "frontier-asr",
+  "protocol": "command",
+  "command": [
+    "python",
+    "${BENCHMARK_ROOT}/scripts/frontier_command_adapter.py",
+    "sensevoice_coreml",
+    "--audio={audio}",
+    "--language={language}",
+    "--prompt={prompt}",
+    "--word-timestamps={word_timestamps}",
+    "--model={model}",
+    "--model-path={model_path}"
+  ],
+  "description": "Core ML SenseVoice Small int8 inference boundary for fixed-locale local runs.",
+  "model": "benthompson/sensevoice-small-coreml",
+  "model_path": "${SENSEVOICE_COREML_MODEL_DIR}",
+  "license": "MIT + upstream model terms",
+  "source_url": "https://huggingface.co/FunAudioLLM/SenseVoiceSmall",
+  "required_commands": [],
+  "required_paths": [
+    "${SENSEVOICE_COREML_RUNTIME}",
+    "${SENSEVOICE_COREML_MODEL_DIR}"
+  ],
+  "required_python_modules": [],
+  "capabilities": {
+    "languages": [
+      "zh",
+      "en",
+      "yue",
+      "ja",
+      "ko"
+    ],
+    "prompt": false,
+    "word_timestamps": false,
+    "segment_timestamps": false,
+    "streaming": false,
+    "persistent": false
+  },
+  "options": {
+    "supports_translation": false,
+    "supports_diarization": false,
+    "supports_itn": true,
+    "output_format": "json",
+    "timeout_seconds": 600
+  },
+  "environment": {
+    "PYTHONUNBUFFERED": "1"
+  },
+  "setup": "This adapter calls a local SenseVoice Core ML runtime binary. Set SENSEVOICE_COREML_RUNTIME and SENSEVOICE_COREML_MODEL_DIR before benchmark startup. Language and inverse-text-normalization are recognized when supported by the runtime; timestamps/diarization/translation unsupported."
+}
