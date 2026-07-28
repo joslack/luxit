@@ -20,10 +20,55 @@ private enum VoiceOrbConfigurationTests {
                 VoiceOrbMotion.jitterScale == 0.58 &&
                 VoiceOrbMotion.spatialScale == 1.08 &&
                 VoiceOrbMotion.voiceResponseScale == 1.65 &&
-                VoiceOrbMotion.idleVisualFloor == 0.12 &&
-                VoiceOrbMotion.particleContrastRimWidth == 0.45 &&
-                VoiceOrbMotion.particleContrastRimOpacity == 0.25,
+                VoiceOrbMotion.idleVisualFloor == 0.12,
             "the sole orb motion remains the attractor behavior"
+        )
+        let whiteLuminance = VoiceOrbMotion.particleLuminance(
+            red: 1,
+            green: 1,
+            blue: 1
+        )
+        let darkLuminance = VoiceOrbMotion.particleLuminance(
+            red: 0.1,
+            green: 0.1,
+            blue: 0.1
+        )
+        expect(
+            whiteLuminance == 1 &&
+                darkLuminance > 0.09 &&
+                darkLuminance < 0.11,
+            "particle contrast uses perceptual core luminance"
+        )
+        expect(
+            VoiceOrbMotion.particleContrastRimWidth(
+                coreRadius: 0.2
+            ) == 0.65 &&
+                VoiceOrbMotion.particleContrastRimWidth(
+                    coreRadius: 10
+                ) == 0.8,
+            "the contrast keyline remains visible without becoming a ring"
+        )
+        let whiteRimOpacity =
+            VoiceOrbMotion.particleContrastRimOpacity(
+                coreLuminance: whiteLuminance
+            )
+        let whiteRimWhite =
+            VoiceOrbMotion.particleContrastRimWhite(
+                coreLuminance: whiteLuminance
+            )
+        expect(
+            abs(whiteRimOpacity - 0.48) < 0.0001 &&
+                abs(whiteRimWhite - 0.07) < 0.0001,
+            "white particles receive a definite graphite keyline"
+        )
+        expect(
+            VoiceOrbMotion.particleContrastRimOpacity(
+                coreLuminance: darkLuminance
+            ) == 0.20 &&
+                VoiceOrbMotion.particleContrastRimWhite(
+                    coreLuminance: darkLuminance
+                ) == 1,
+            "dark particles retain a restrained pale keyline"
         )
         let firstProcessingFrame =
             VoiceOrbMotion.advanceProcessingProgress(0, elapsed: 0.1)

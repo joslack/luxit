@@ -8,8 +8,6 @@ enum VoiceOrbMotion {
     static let voiceResponseScale: CGFloat = 1.65
     static let baseRadius: CGFloat = 70
     static let voiceRadiusGrowth: CGFloat = 15
-    static let particleContrastRimWidth: CGFloat = 0.45
-    static let particleContrastRimOpacity: CGFloat = 0.25
 
     static let idleVisualFloor: CGFloat = 0.12
     static let processingLevelFloor: CGFloat = 0.48
@@ -48,6 +46,34 @@ enum VoiceOrbMotion {
 
     static func processingBreathScale(_ pulse: CGFloat) -> CGFloat {
         1 + clamp(pulse) * 0.06
+    }
+
+    static func particleLuminance(
+        red: CGFloat,
+        green: CGFloat,
+        blue: CGFloat
+    ) -> CGFloat {
+        clamp(red) * 0.2126 +
+            clamp(green) * 0.7152 +
+            clamp(blue) * 0.0722
+    }
+
+    static func particleContrastRimWidth(
+        coreRadius: CGFloat
+    ) -> CGFloat {
+        min(0.8, max(0.65, coreRadius * 0.22))
+    }
+
+    static func particleContrastRimOpacity(
+        coreLuminance: CGFloat
+    ) -> CGFloat {
+        0.20 + smoothstep(0.45, 0.82, coreLuminance) * 0.28
+    }
+
+    static func particleContrastRimWhite(
+        coreLuminance: CGFloat
+    ) -> CGFloat {
+        1 - smoothstep(0.45, 0.82, coreLuminance) * 0.93
     }
 
     static func materializationAlpha(

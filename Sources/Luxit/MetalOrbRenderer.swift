@@ -9,7 +9,7 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
     private weak var view: MTKView?
     private var particleBuffer: MTLBuffer?
     private var particleCount = 0
-    private var uniformValues = [Float](repeating: 0, count: 30)
+    private var uniformValues = [Float](repeating: 0, count: 28)
     private var lastSpectrum: [CGFloat] = []
     private var lastLevel: CGFloat = -1
 
@@ -161,12 +161,6 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
                 panelExtent: min(bounds.width, bounds.height)
             )
         )
-        uniformValues[28] = Float(
-            VoiceOrbMotion.particleContrastRimWidth
-        )
-        uniformValues[29] = Float(
-            VoiceOrbMotion.particleContrastRimOpacity
-        )
         view?.draw()
     }
 
@@ -252,7 +246,6 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
         float pointSize [[point_size]];
         float4 color;
         float coreRatio;
-        float rimOpacity;
     };
 
     float hashValue(uint value) {
@@ -418,10 +411,11 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
                 (0.55 + appearanceCondensation * 0.45) *
                 u[20]
         );
-        float rimWidth = u[28] * u[20];
+        float logicalCoreRadius = coreSize / (2.0 * u[20]);
+        float rimWidth =
+            clamp(logicalCoreRadius * 0.22, 0.65, 0.8) * u[20];
         out.pointSize = coreSize + rimWidth * 2.0;
         out.coreRatio = coreSize / out.pointSize;
-        out.rimOpacity = u[29];
         out.color = float4(color, alpha);
         return out;
     }
@@ -438,12 +432,18 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
             distance
         );
         float rimCoverage = max(0.0, outerCoverage - coreCoverage);
-        float rimWeight = rimCoverage * in.rimOpacity;
+        float coreLuminance = dot(
+            in.color.rgb,
+            float3(0.2126, 0.7152, 0.0722)
+        );
+        float lightCore = smoothstep(0.45, 0.82, coreLuminance);
+        float rimOpacity = mix(0.20, 0.48, lightCore);
+        float3 rimColor = float3(mix(1.0, 0.07, lightCore));
+        float rimWeight = rimCoverage * rimOpacity;
         float totalCoverage = coreCoverage + rimWeight;
-        float3 graphite = float3(0.07);
         float3 compositedColor = (
             in.color.rgb * coreCoverage +
-            graphite * rimWeight
+            rimColor * rimWeight
         ) / max(0.0001, totalCoverage);
         return half4(
             half3(compositedColor),
