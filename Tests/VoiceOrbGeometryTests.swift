@@ -46,6 +46,33 @@ private enum VoiceOrbGeometryTests {
             sortedRadii.last! > medianRadius * 1.7,
             "the cloud should include a visible long tail of larger grains"
         )
+        let idle = VoiceOrbGeometry.points(
+            spectrum: [CGFloat](repeating: 0, count: 23),
+            level: 0.12
+        )
+        let idleRadii = idle.map(\.radius).sorted()
+        let smallTail = idleRadii[idleRadii.count / 10]
+        let idleMedian = idleRadii[idleRadii.count / 2]
+        expect(
+            smallTail < 0.5 && idleMedian > 0.95,
+            "the larger default should preserve a dust-like lower tail"
+        )
+        let regularGrain = VoiceOrbGeometry.particleRadius(
+            sizeSeed: 0.5,
+            sizeRole: 0.5,
+            localEnergy: 0,
+            voice: 0
+        )
+        let largeGrain = VoiceOrbGeometry.particleRadius(
+            sizeSeed: 0.5,
+            sizeRole: 1,
+            localEnergy: 0,
+            voice: 0
+        )
+        expect(
+            largeGrain > regularGrain * 2,
+            "the enlarged body should retain its prominent large-grain tail"
+        )
         let jitterA = VoiceOrbGeometry.motionNoise(
             point: 12,
             time: 4.25,

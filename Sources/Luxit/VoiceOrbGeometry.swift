@@ -89,20 +89,12 @@ enum VoiceOrbGeometry {
                     (0.30 + voice * 0.70)
                 )
             )
-            let sizeRole = unitHash(index, salt: 613)
-            let largeGrainScale: CGFloat
-            if sizeRole > 0.88 {
-                largeGrainScale =
-                    1.65 + (sizeRole - 0.88) / 0.12 * 0.75
-            } else {
-                largeGrainScale = 1
-            }
-            let pointRadius = (
-                0.38 +
-                unitHash(index, salt: 251) * 0.72 +
-                localEnergy * 0.62 +
-                voice * 0.16
-            ) * largeGrainScale
+            let pointRadius = particleRadius(
+                sizeSeed: unitHash(index, salt: 251),
+                sizeRole: unitHash(index, salt: 613),
+                localEnergy: localEnergy,
+                voice: voice
+            )
             return VoiceOrbPoint(
                 x: x,
                 y: y,
@@ -114,6 +106,38 @@ enum VoiceOrbGeometry {
                 driftScale: 0.62 + unitHash(index, salt: 557) * 1.12
             )
         }
+    }
+
+    static func particleRadius(
+        sizeSeed: CGFloat,
+        sizeRole: CGFloat,
+        localEnergy: CGFloat,
+        voice: CGFloat
+    ) -> CGFloat {
+        let seed = max(0, min(1, sizeSeed))
+        let baseline: CGFloat
+        if seed < 0.18 {
+            // Keep a deliberate dust-like tail even as the typical grain
+            // becomes more substantial.
+            baseline = 0.30 + seed / 0.18 * 0.25
+        } else {
+            let body = (seed - 0.18) / 0.82
+            baseline = 0.55 + pow(body, 0.78) * 0.76
+        }
+
+        let role = max(0, min(1, sizeRole))
+        let largeGrainScale: CGFloat
+        if role > 0.88 {
+            largeGrainScale =
+                1.65 + (role - 0.88) / 0.12 * 0.75
+        } else {
+            largeGrainScale = 1
+        }
+        return (
+            baseline +
+            max(0, min(1, localEnergy)) * 0.62 +
+            max(0, min(1, voice)) * 0.16
+        ) * largeGrainScale
     }
 
     /// Smooth deterministic noise for independent particle motion.
