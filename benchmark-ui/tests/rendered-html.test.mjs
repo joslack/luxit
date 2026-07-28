@@ -38,7 +38,7 @@ test("server-renders the Voiceprint benchmark shell", async () => {
   assert.match(html, /Inference matrix/);
   assert.match(html, /Leaderboard/);
   assert.match(html, /Luxit, FluidAudio, PostgreSQL, Kubernetes…/);
-  assert.doesNotMatch(html, /Trinity|lab Trinity|current conversation/i);
+  assert.doesNotMatch(html, /private host|current conversation/i);
 });
 
 test("keeps recording and results local by construction", async () => {
@@ -56,7 +56,7 @@ test("keeps recording and results local by construction", async () => {
   assert.match(page, /Raw audio and results stay in/);
   assert.match(layout, /title:\s*"Voiceprint — Luxit Inference Lab"/);
   assert.match(packageJson, /"private": true/);
-  assert.doesNotMatch(page, /Trinity|lab Trinity|current conversation/i);
+  assert.doesNotMatch(page, /private host|current conversation/i);
 
   await assert.rejects(
     access(new URL("SkeletonPreview.tsx", previewRoot)),

@@ -12,6 +12,8 @@ macos_dir="$contents_dir/MacOS"
 resources_dir="$contents_dir/Resources"
 sdk_path="$(xcrun --sdk macosx --show-sdk-path)"
 module_cache="$build_dir/ModuleCache"
+version="$("$project_dir/scripts/version.sh" --short)"
+build_number="$("$project_dir/scripts/version.sh" --build)"
 
 whisper_prefix="$(brew --prefix whisper-cpp)"
 ggml_prefix="$(brew --prefix ggml)"
@@ -68,6 +70,12 @@ swiftc \
   -o "$macos_dir/Luxit"
 
 cp "$project_dir/Resources/Info.plist" "$contents_dir/Info.plist"
+/usr/libexec/PlistBuddy \
+  -c "Set :CFBundleShortVersionString $version" \
+  "$contents_dir/Info.plist"
+/usr/libexec/PlistBuddy \
+  -c "Set :CFBundleVersion $build_number" \
+  "$contents_dir/Info.plist"
 cp "$project_dir/Resources/AppIcon.icns" "$resources_dir/AppIcon.icns"
 xattr -cr "$app_dir"
 "$project_dir/scripts/sign-app.sh" "$app_dir"
@@ -88,4 +96,4 @@ ditto \
   "$output_archive"
 rm -rf "$staging_root"
 
-echo "Built $output_archive"
+echo "Built Luxit $version ($build_number) at $output_archive"

@@ -8,6 +8,35 @@ module_cache="$build_dir/ModuleCache"
 mkdir -p "$build_dir"
 mkdir -p "$module_cache"
 
+version="$("$project_dir/scripts/version.sh" --short)"
+build_number="$("$project_dir/scripts/version.sh" --build)"
+if [[ ! "$version" =~ '^[0-9]+\.[0-9]+\.[0-9]+$' ]] ||
+   [[ ! "$build_number" =~ '^[1-9][0-9]*$' ]]; then
+  echo "Invalid Luxit version metadata." >&2
+  exit 1
+fi
+
+for script in \
+  "$project_dir/scripts/version.sh" \
+  "$project_dir/scripts/bump-version.sh" \
+  "$project_dir/scripts/release-bump.sh" \
+  "$project_dir/scripts/release.sh" \
+  "$project_dir/scripts/test-versioning.sh"; do
+  zsh -n "$script"
+done
+"$project_dir/scripts/bump-version.sh" patch --dry-run >/dev/null
+"$project_dir/scripts/test-versioning.sh"
+
+if [[ "$(/usr/libexec/PlistBuddy \
+  -c 'Print :CFBundleShortVersionString' \
+  "$project_dir/Resources/Info.plist")" != "__LUXIT_VERSION__" ]] ||
+   [[ "$(/usr/libexec/PlistBuddy \
+  -c 'Print :CFBundleVersion' \
+  "$project_dir/Resources/Info.plist")" != "__LUXIT_BUILD__" ]]; then
+  echo "Resources/Info.plist must retain version template placeholders." >&2
+  exit 1
+fi
+
 swiftc \
   -swift-version 5 \
   -sdk "$sdk_path" \
