@@ -70,6 +70,60 @@ private enum VoiceOrbConfigurationTests {
                 ) == 1,
             "dark particles retain a restrained pale keyline"
         )
+        expect(
+            abs(
+                VoiceOrbMotion.cloudUnderlayRadius(
+                    baseRadius: 70,
+                    panelExtent: 280
+                ) - 92.4
+            ) < 0.0001 &&
+                abs(
+                    VoiceOrbMotion.cloudUnderlayRadius(
+                        baseRadius: 200,
+                        panelExtent: 280
+                    ) - 128.8
+                ) < 0.0001,
+            "the contrast atmosphere stays inside the orb panel"
+        )
+        expect(
+            VoiceOrbMotion.cloudUnderlayOpacity(
+                appearance: 0,
+                completion: 0
+            ) == 0 &&
+                VoiceOrbMotion.cloudUnderlayOpacity(
+                    appearance: 1,
+                    completion: 1
+                ) == 0 &&
+                abs(
+                    VoiceOrbMotion.cloudUnderlayOpacity(
+                        appearance: 1,
+                        completion: 0
+                    ) - 0.11
+                ) < 0.0001,
+            "the contrast atmosphere follows the cloud lifecycle"
+        )
+        let centerUnderlayAlpha = VoiceOrbMotion.cloudUnderlayAlpha(
+            normalizedDistance: 0,
+            appearance: 1,
+            completion: 0
+        )
+        let middleUnderlayAlpha = VoiceOrbMotion.cloudUnderlayAlpha(
+            normalizedDistance: 0.5,
+            appearance: 1,
+            completion: 0
+        )
+        let edgeUnderlayAlpha = VoiceOrbMotion.cloudUnderlayAlpha(
+            normalizedDistance: 1,
+            appearance: 1,
+            completion: 0
+        )
+        expect(
+            abs(centerUnderlayAlpha - 0.11) < 0.0001 &&
+                middleUnderlayAlpha > 0 &&
+                middleUnderlayAlpha < centerUnderlayAlpha &&
+                edgeUnderlayAlpha == 0,
+            "the contrast atmosphere fades without a visible perimeter"
+        )
         let firstProcessingFrame =
             VoiceOrbMotion.advanceProcessingProgress(0, elapsed: 0.1)
         let laterProcessingFrame =

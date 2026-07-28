@@ -9,7 +9,7 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
     private weak var view: MTKView?
     private var particleBuffer: MTLBuffer?
     private var particleCount = 0
-    private var uniformValues = [Float](repeating: 0, count: 28)
+    private var uniformValues = [Float](repeating: 0, count: 31)
     private var lastSpectrum: [CGFloat] = []
     private var lastLevel: CGFloat = -1
 
@@ -161,6 +161,19 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
                 panelExtent: min(bounds.width, bounds.height)
             )
         )
+        uniformValues[28] = Float(
+            VoiceOrbMotion.cloudUnderlayRadius(
+                baseRadius: baseRadius,
+                panelExtent: min(bounds.width, bounds.height)
+            )
+        )
+        uniformValues[29] = Float(
+            VoiceOrbMotion.cloudUnderlayOpacity(
+                appearance: appearance,
+                completion: progress
+            )
+        )
+        uniformValues[30] = Float(particleCount)
         view?.draw()
     }
 
@@ -213,6 +226,11 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
         }
         encoder.drawPrimitives(
             type: .point,
+            vertexStart: particleCount,
+            vertexCount: 1
+        )
+        encoder.drawPrimitives(
+            type: .point,
             vertexStart: 0,
             vertexCount: particleCount
         )
@@ -246,6 +264,7 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
         float pointSize [[point_size]];
         float4 color;
         float coreRatio;
+        float isUnderlay;
     };
 
     float hashValue(uint value) {
@@ -272,6 +291,15 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
         device const float *particles [[buffer(0)]],
         constant float *u [[buffer(1)]]
     ) {
+        if (vertexID == uint(u[30])) {
+            OrbVertexOut underlay;
+            underlay.position = float4(0.0, 0.0, 0.0, 1.0);
+            underlay.pointSize = u[28] * 2.0 * u[20];
+            underlay.color = float4(float3(0.07), u[29]);
+            underlay.coreRatio = 1.0;
+            underlay.isUnderlay = 1.0;
+            return underlay;
+        }
         uint offset = vertexID * 8;
         float2 base = float2(particles[offset], particles[offset + 1]);
         float radius = particles[offset + 2];
@@ -417,6 +445,7 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
         out.pointSize = coreSize + rimWidth * 2.0;
         out.coreRatio = coreSize / out.pointSize;
         out.color = float4(color, alpha);
+        out.isUnderlay = 0.0;
         return out;
     }
 
@@ -425,6 +454,16 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
         float2 pointCoordinate [[point_coord]]
     ) {
         float distance = length(pointCoordinate - float2(0.5)) * 2.0;
+        if (in.isUnderlay > 0.5) {
+            float underlayCoverage = pow(
+                max(0.0, 1.0 - distance * distance),
+                1.65
+            );
+            return half4(
+                half3(in.color.rgb),
+                half(in.color.a * underlayCoverage)
+            );
+        }
         float outerCoverage = 1.0 - smoothstep(0.72, 1.0, distance);
         float coreCoverage = 1.0 - smoothstep(
             in.coreRatio * 0.72,

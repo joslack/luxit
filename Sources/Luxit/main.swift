@@ -308,6 +308,50 @@ private final class EdgeIndicatorView: NSView {
             VoiceOrbMotion.materializationDotScale(
                 appearanceCondensation
             )
+        let underlayRadius = VoiceOrbMotion.cloudUnderlayRadius(
+            baseRadius: baseRadius,
+            panelExtent: min(bounds.width, bounds.height)
+        )
+        let underlayOpacity = VoiceOrbMotion.cloudUnderlayOpacity(
+            appearance: appearanceProgress,
+            completion: progress
+        )
+        if underlayOpacity > 0,
+           let underlayGradient = NSGradient(
+            colorsAndLocations:
+                (
+                    NSColor(
+                        calibratedWhite: 0.07,
+                        alpha: underlayOpacity
+                    ),
+                    0
+                ),
+                (
+                    NSColor(
+                        calibratedWhite: 0.07,
+                        alpha: underlayOpacity * 0.62
+                    ),
+                    0.5
+                ),
+                (
+                    NSColor(
+                        calibratedWhite: 0.07,
+                        alpha: underlayOpacity * 0.14
+                    ),
+                    0.82
+                ),
+                (NSColor.clear, 1)
+           ) {
+            underlayGradient.draw(
+                in: NSRect(
+                    x: center.x - underlayRadius,
+                    y: center.y - underlayRadius,
+                    width: underlayRadius * 2,
+                    height: underlayRadius * 2
+                ),
+                relativeCenterPosition: .zero
+            )
+        }
         for (index, point) in points.enumerated() {
             let rotatedX = point.x * cosine - point.y * sine
             let rotatedY = point.x * sine + point.y * cosine
