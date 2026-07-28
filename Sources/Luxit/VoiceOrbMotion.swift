@@ -8,8 +8,7 @@ enum VoiceOrbMotion {
     static let voiceResponseScale: CGFloat = 1.65
     static let baseRadius: CGFloat = 70
     static let voiceRadiusGrowth: CGFloat = 15
-    static let maximumParticleEDRGain: CGFloat = 1.8
-    static let pearlHighlightAlpha: CGFloat = 0.30
+    static let maximumParticleEDRGain: CGFloat = 1.55
 
     static let idleVisualFloor: CGFloat = 0.12
     static let processingLevelFloor: CGFloat = 0.48
@@ -63,13 +62,13 @@ enum VoiceOrbMotion {
     static func particleContrastRimWidth(
         coreRadius: CGFloat
     ) -> CGFloat {
-        min(0.8, max(0.65, coreRadius * 0.22))
+        min(0.56, max(0.38, coreRadius * 0.16))
     }
 
     static func particleContrastRimOpacity(
         coreLuminance: CGFloat
     ) -> CGFloat {
-        0.14 + smoothstep(0.45, 0.82, coreLuminance) * 0.46
+        0.12 + smoothstep(0.45, 0.82, coreLuminance) * 0.22
     }
 
     static func particleContrastRimWhite(
@@ -87,19 +86,10 @@ enum VoiceOrbMotion {
         )
     }
 
-    static func pearlBaseShade(
-        lightAmount: CGFloat
+    static func particleBaseAlpha(
+        intensity: CGFloat
     ) -> CGFloat {
-        0.54 + clamp(lightAmount) * 0.34
-    }
-
-    static func pearlSpecularGain(
-        edrHeadroom: CGFloat
-    ) -> CGFloat {
-        let headroom = particleEDRGain(
-            availableHeadroom: edrHeadroom
-        )
-        return 0.18 + 0.72 * (headroom - 1)
+        0.65 + clamp(intensity) * 0.35
     }
 
     static func materializationAlpha(

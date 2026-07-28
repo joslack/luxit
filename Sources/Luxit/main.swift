@@ -87,38 +87,60 @@ private func reasonForAvailability(_ availability: ModelAvailability) -> String 
 
 private final class EdgeIndicatorView: NSView {
     var indicatorState: EdgeState = .hidden {
-        didSet { refreshVisuals() }
+        didSet {
+            if indicatorState != oldValue { refreshVisuals() }
+        }
     }
     var audioLevel: CGFloat = 0 {
-        didSet { refreshVisuals() }
+        didSet {
+            if audioLevel != oldValue { refreshVisuals() }
+        }
     }
     var audioProfile: [CGFloat] = Array(repeating: 0, count: 23) {
-        didSet { refreshVisuals() }
+        didSet {
+            if audioProfile != oldValue { refreshVisuals() }
+        }
     }
     var pulse: CGFloat = 0 {
-        didSet { refreshVisuals() }
+        didSet {
+            if pulse != oldValue { refreshVisuals() }
+        }
     }
     var processingProgress: CGFloat = 0 {
-        didSet { refreshVisuals() }
+        didSet {
+            if processingProgress != oldValue { refreshVisuals() }
+        }
     }
     var animationPhase: CGFloat = 0 {
-        didSet { refreshVisuals() }
+        didSet {
+            if animationPhase != oldValue { refreshVisuals() }
+        }
     }
     var orbMotionPhase: CGFloat = 0 {
-        didSet { refreshVisuals() }
+        didSet {
+            if orbMotionPhase != oldValue { refreshVisuals() }
+        }
     }
     var completionProgress: CGFloat = 0 {
-        didSet { refreshVisuals() }
+        didSet {
+            if completionProgress != oldValue { refreshVisuals() }
+        }
     }
     var pointerLocation: NSPoint? {
-        didSet { refreshVisuals() }
+        didSet {
+            if pointerLocation != oldValue { refreshVisuals() }
+        }
     }
     var appearanceProgress: CGFloat = 0 {
-        didSet { refreshVisuals() }
+        didSet {
+            if appearanceProgress != oldValue { refreshVisuals() }
+        }
     }
 
     private var metalOrbView: MTKView?
     private var metalOrbRenderer: MetalOrbRenderer?
+    private var visualUpdateDepth = 0
+    private var visualRefreshPending = false
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -177,7 +199,24 @@ private final class EdgeIndicatorView: NSView {
         }
     }
 
+    func performVisualUpdate(_ update: () -> Void) {
+        visualUpdateDepth += 1
+        update()
+        visualUpdateDepth -= 1
+        guard visualUpdateDepth == 0, visualRefreshPending else { return }
+        visualRefreshPending = false
+        renderVisuals()
+    }
+
     private func refreshVisuals() {
+        guard visualUpdateDepth == 0 else {
+            visualRefreshPending = true
+            return
+        }
+        renderVisuals()
+    }
+
+    private func renderVisuals() {
         needsDisplay = true
         syncMetalOrb()
     }
@@ -439,7 +478,9 @@ private final class EdgeIndicatorView: NSView {
                 smoothstep(0.64, 1.16, radialDistance) *
                 (0.42 - min(0.42, point.driftScale * 0.16))
             let alpha =
-                (0.50 + point.intensity * 0.50) *
+                VoiceOrbMotion.particleBaseAlpha(
+                    intensity: point.intensity
+                ) *
                 edgeFeather *
                 edgeVariation *
                 pow(1 - dissipation, 1.65) *
@@ -493,52 +534,13 @@ private final class EdgeIndicatorView: NSView {
                     height: (dotRadius + rimWidth) * 2
                 )
             ).fill()
-            let shadowColor = pointColor.blended(
-                withFraction:
-                    1 - VoiceOrbMotion.pearlBaseShade(lightAmount: 0),
-                of: .black
-            ) ?? pointColor
-            shadowColor.withAlphaComponent(alpha).setFill()
+            pointColor.withAlphaComponent(alpha).setFill()
             NSBezierPath(
                 ovalIn: NSRect(
                     x: position.x - dotRadius,
                     y: position.y - dotRadius,
                     width: dotRadius * 2,
                     height: dotRadius * 2
-                )
-            ).fill()
-            let litRadius = dotRadius * 0.84
-            pointColor.withAlphaComponent(alpha).setFill()
-            NSBezierPath(
-                ovalIn: NSRect(
-                    x:
-                        position.x -
-                        litRadius -
-                        dotRadius * 0.10,
-                    y:
-                        position.y -
-                        litRadius +
-                        dotRadius * 0.10,
-                    width: litRadius * 2,
-                    height: litRadius * 2
-                )
-            ).fill()
-            let highlightRadius = dotRadius * 0.28
-            NSColor.white.withAlphaComponent(
-                alpha * VoiceOrbMotion.pearlHighlightAlpha
-            ).setFill()
-            NSBezierPath(
-                ovalIn: NSRect(
-                    x:
-                        position.x -
-                        highlightRadius -
-                        dotRadius * 0.25,
-                    y:
-                        position.y -
-                        highlightRadius +
-                        dotRadius * 0.24,
-                    width: highlightRadius * 2,
-                    height: highlightRadius * 2
                 )
             ).fill()
         }
@@ -656,11 +658,13 @@ private final class EdgeIndicator {
                 self.phase +=
                     elapsed * flowSpeed * VoiceOrbMotion.speedScale
                 for surface in self.surfaces {
-                    surface.view.orbMotionPhase = self.orbMotionPhase
-                    surface.view.animationPhase = self.phase
-                    surface.view.appearanceProgress =
-                        self.appearanceProgress
-                    surface.view.processingProgress = 0
+                    surface.view.performVisualUpdate {
+                        surface.view.orbMotionPhase = self.orbMotionPhase
+                        surface.view.animationPhase = self.phase
+                        surface.view.appearanceProgress =
+                            self.appearanceProgress
+                        surface.view.processingProgress = 0
+                    }
                 }
                 self.updatePointerDissipation()
             }
@@ -701,15 +705,18 @@ private final class EdgeIndicator {
                     elapsed * flowSpeed * VoiceOrbMotion.speedScale
                 let pulse = (sin(self.breathPhase) + 1) / 2
                 for surface in self.surfaces {
-                    surface.view.pulse = pulse
-                    surface.view.animationPhase = self.phase
-                    surface.view.orbMotionPhase = self.orbMotionPhase
-                    surface.view.appearanceProgress =
-                        self.appearanceProgress
-                    surface.view.processingProgress =
-                        self.processingProgress
-                    surface.view.audioLevel = self.currentAudioLevel
-                    surface.view.audioProfile = self.currentAudioProfile
+                    surface.view.performVisualUpdate {
+                        surface.view.pulse = pulse
+                        surface.view.animationPhase = self.phase
+                        surface.view.orbMotionPhase = self.orbMotionPhase
+                        surface.view.appearanceProgress =
+                            self.appearanceProgress
+                        surface.view.processingProgress =
+                            self.processingProgress
+                        surface.view.audioLevel = self.currentAudioLevel
+                        surface.view.audioProfile =
+                            self.currentAudioProfile
+                    }
                 }
                 self.updatePointerDissipation()
             }
@@ -770,8 +777,10 @@ private final class EdgeIndicator {
         timer?.invalidate()
         currentState = .completing
         for surface in surfaces where surface.panel.isVisible {
-            surface.view.indicatorState = .completing
-            surface.view.completionProgress = 0
+            surface.view.performVisualUpdate {
+                surface.view.indicatorState = .completing
+                surface.view.completionProgress = 0
+            }
         }
         let startedAt = ProcessInfo.processInfo.systemUptime
         lastAnimationUptime = startedAt
@@ -813,16 +822,19 @@ private final class EdgeIndicator {
             let elapsed = now - startedAt
             let progress = min(1, CGFloat(elapsed / duration))
             for surface in self.surfaces {
-                surface.view.completionProgress = progress
-                surface.view.pulse = pulse
-                surface.view.animationPhase = self.phase
-                surface.view.orbMotionPhase = self.orbMotionPhase
-                surface.view.appearanceProgress =
-                    self.appearanceProgress
-                surface.view.processingProgress =
-                    self.processingProgress
-                surface.view.audioLevel = self.currentAudioLevel
-                surface.view.audioProfile = self.currentAudioProfile
+                surface.view.performVisualUpdate {
+                    surface.view.completionProgress = progress
+                    surface.view.pulse = pulse
+                    surface.view.animationPhase = self.phase
+                    surface.view.orbMotionPhase = self.orbMotionPhase
+                    surface.view.appearanceProgress =
+                        self.appearanceProgress
+                    surface.view.processingProgress =
+                        self.processingProgress
+                    surface.view.audioLevel = self.currentAudioLevel
+                    surface.view.audioProfile =
+                        self.currentAudioProfile
+                }
             }
             self.updatePointerDissipation()
             if progress >= 1 {
@@ -916,8 +928,10 @@ private final class EdgeIndicator {
             self.orbMotionSpeed +=
                 (targetMotionSpeed - self.orbMotionSpeed) * 0.42
             for surface in self.surfaces {
-                surface.view.audioLevel = self.currentAudioLevel
-                surface.view.audioProfile = self.currentAudioProfile
+                surface.view.performVisualUpdate {
+                    surface.view.audioLevel = self.currentAudioLevel
+                    surface.view.audioProfile = self.currentAudioProfile
+                }
             }
             self.updatePointerDissipation()
         }
@@ -933,8 +947,10 @@ private final class EdgeIndicator {
         targetDisplayID = nil
         processingProgress = 0
         for surface in surfaces {
-            surface.view.indicatorState = .hidden
-            surface.view.pointerLocation = nil
+            surface.view.performVisualUpdate {
+                surface.view.indicatorState = .hidden
+                surface.view.pointerLocation = nil
+            }
             surface.panel.orderOut(nil)
         }
     }
@@ -1045,6 +1061,33 @@ private final class EdgeIndicator {
         }
     }
 
+    func screenParametersChanged() {
+        let screensByID: [NSNumber: NSScreen] = Dictionary(
+            uniqueKeysWithValues: NSScreen.screens.compactMap { screen in
+                guard let displayID = screen.deviceDescription[
+                    NSDeviceDescriptionKey("NSScreenNumber")
+                ] as? NSNumber else {
+                    return nil
+                }
+                return (displayID, screen)
+            }
+        )
+        let currentIDs = Set(surfaces.map(\.displayID))
+        guard currentIDs == Set(screensByID.keys) else {
+            rebuildPanels()
+            return
+        }
+        for surface in surfaces {
+            guard let screen = screensByID[surface.displayID] else {
+                continue
+            }
+            surface.panel.setFrame(
+                panelFrame(on: screen),
+                display: false
+            )
+        }
+    }
+
     private func presentPanels() {
         let target = targetDisplayID ?? resolveTargetDisplay().displayID
         targetDisplayID = target
@@ -1054,18 +1097,21 @@ private final class EdgeIndicator {
                 surface.panel.orderOut(nil)
                 continue
             }
-            surface.view.indicatorState = currentState
-            surface.view.audioLevel = currentAudioLevel
-            surface.view.audioProfile = currentAudioProfile
-            surface.view.appearanceProgress = appearanceProgress
-            surface.view.processingProgress = processingProgress
             let visiblePulsePhase =
                 currentState == .processing || currentState == .completing
                     ? breathPhase
                     : phase
-            surface.view.pulse = (sin(visiblePulsePhase) + 1) / 2
-            surface.view.animationPhase = phase
-            surface.view.orbMotionPhase = orbMotionPhase
+            surface.view.performVisualUpdate {
+                surface.view.indicatorState = currentState
+                surface.view.audioLevel = currentAudioLevel
+                surface.view.audioProfile = currentAudioProfile
+                surface.view.appearanceProgress = appearanceProgress
+                surface.view.processingProgress = processingProgress
+                surface.view.pulse =
+                    (sin(visiblePulsePhase) + 1) / 2
+                surface.view.animationPhase = phase
+                surface.view.orbMotionPhase = orbMotionPhase
+            }
             surface.panel.orderFrontRegardless()
             surface.panel.displayIfNeeded()
         }
@@ -2569,7 +2615,9 @@ private final class AppDelegate:
             forName: NSApplication.didChangeScreenParametersNotification,
             object: nil,
             queue: .main
-        ) { [weak self] _ in self?.indicator.rebuildPanels() }
+        ) { [weak self] _ in
+            self?.indicator.screenParametersChanged()
+        }
 
         let workspaceNotifications: [Notification.Name] = [
             NSWorkspace.didWakeNotification,

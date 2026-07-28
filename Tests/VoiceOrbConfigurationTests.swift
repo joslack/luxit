@@ -42,10 +42,10 @@ private enum VoiceOrbConfigurationTests {
         expect(
             VoiceOrbMotion.particleContrastRimWidth(
                 coreRadius: 0.2
-            ) == 0.65 &&
+            ) == 0.38 &&
                 VoiceOrbMotion.particleContrastRimWidth(
                     coreRadius: 10
-                ) == 0.8,
+                ) == 0.56,
             "the contrast keyline remains visible without becoming a ring"
         )
         let whiteRimOpacity =
@@ -57,14 +57,14 @@ private enum VoiceOrbConfigurationTests {
                 coreLuminance: whiteLuminance
             )
         expect(
-            abs(whiteRimOpacity - 0.60) < 0.0001 &&
+            abs(whiteRimOpacity - 0.34) < 0.0001 &&
                 abs(whiteRimWhite - 0.07) < 0.0001,
-            "white particles receive a definite graphite keyline"
+            "white particles receive a slim graphite keyline"
         )
         expect(
             VoiceOrbMotion.particleContrastRimOpacity(
                 coreLuminance: darkLuminance
-            ) == 0.14 &&
+            ) == 0.12 &&
                 VoiceOrbMotion.particleContrastRimWhite(
                     coreLuminance: darkLuminance
                 ) == 1,
@@ -79,29 +79,14 @@ private enum VoiceOrbConfigurationTests {
                 ) == 1 &&
                 VoiceOrbMotion.particleEDRGain(
                     availableHeadroom: 3
-                ) == 1.8,
-            "particle highlights use available display headroom safely"
+                ) == 1.55,
+            "whole particles use available display headroom safely"
         )
         expect(
-            abs(
-                VoiceOrbMotion.pearlBaseShade(lightAmount: 0) - 0.54
-            ) < 0.0001 &&
-                abs(
-                    VoiceOrbMotion.pearlBaseShade(lightAmount: 1) - 0.88
-                ) < 0.0001,
-            "pearl particles preserve a shadow side and lit face"
-        )
-        expect(
-            abs(
-                VoiceOrbMotion.pearlSpecularGain(edrHeadroom: 1) - 0.18
-            ) < 0.0001 &&
-                abs(
-                    VoiceOrbMotion.pearlSpecularGain(
-                        edrHeadroom: 1.8
-                    ) - 0.756
-                ) < 0.0001 &&
-                VoiceOrbMotion.pearlHighlightAlpha == 0.30,
-            "pearl highlights remain visible in SDR and expand into EDR"
+            VoiceOrbMotion.particleBaseAlpha(intensity: 0) == 0.65 &&
+                VoiceOrbMotion.particleBaseAlpha(intensity: 1) == 1 &&
+                VoiceOrbMotion.particleBaseAlpha(intensity: 2) == 1,
+            "the cloud stays bright while retaining intensity variation"
         )
         let firstProcessingFrame =
             VoiceOrbMotion.advanceProcessingProgress(0, elapsed: 0.1)

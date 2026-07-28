@@ -24,9 +24,9 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
         self.device = device
         self.commandQueue = commandQueue
         view.device = device
-        view.colorPixelFormat = .rgba16Float
+        view.colorPixelFormat = .bgra10_xr_srgb
         view.colorspace = CGColorSpace(
-            name: CGColorSpace.extendedLinearDisplayP3
+            name: CGColorSpace.extendedSRGB
         )
         view.clearColor = MTLClearColor(
             red: 0,
@@ -41,6 +41,9 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
         if let metalLayer = view.layer as? CAMetalLayer {
             metalLayer.colorspace = view.colorspace
             metalLayer.wantsExtendedDynamicRangeContent = true
+            metalLayer.preferredDynamicRange = .constrainedHigh
+            metalLayer.contentsHeadroom =
+                VoiceOrbMotion.maximumParticleEDRGain
             metalLayer.edrMetadata = nil
         }
 
@@ -177,7 +180,6 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
             availableHeadroom: availableHeadroom
         )
         uniformValues[28] = Float(edrGain)
-        view?.layer?.contentsHeadroom = edrGain
         view?.draw()
     }
 
@@ -260,7 +262,7 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
     private static let rendererColorSpace: NSColorSpace = {
         guard
             let colorSpace = CGColorSpace(
-                name: CGColorSpace.extendedLinearDisplayP3
+                name: CGColorSpace.extendedSRGB
             ),
             let converted = NSColorSpace(cgColorSpace: colorSpace)
         else {
@@ -405,7 +407,7 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
             smoothstep(0.64, 1.16, radialDistance)
         );
         float alpha =
-            (0.50 + intensity * 0.50) *
+            (0.65 + intensity * 0.35) *
             edgeFeather *
             edgeVariation *
             pow(1.0 - dissipation, 1.65) *
@@ -446,7 +448,7 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
         );
         float logicalCoreRadius = coreSize / (2.0 * u[20]);
         float rimWidth =
-            clamp(logicalCoreRadius * 0.22, 0.65, 0.8) * u[20];
+            clamp(logicalCoreRadius * 0.16, 0.38, 0.56) * u[20];
         out.pointSize = coreSize + rimWidth * 2.0;
         out.coreRatio = coreSize / out.pointSize;
         out.color = float4(color, alpha);
@@ -471,34 +473,11 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
             float3(0.2126, 0.7152, 0.0722)
         );
         float lightCore = smoothstep(0.45, 0.82, coreLuminance);
-        float rimOpacity = mix(0.14, 0.60, lightCore);
+        float rimOpacity = mix(0.12, 0.34, lightCore);
         float3 rimColor = float3(mix(1.0, 0.07, lightCore));
         float rimWeight = rimCoverage * rimOpacity;
         float totalCoverage = coreCoverage + rimWeight;
-        float2 sphereCoordinate =
-            (pointCoordinate - float2(0.5)) * 2.0 /
-            max(0.0001, in.coreRatio);
-        float sphereZ = sqrt(
-            max(0.0, 1.0 - dot(sphereCoordinate, sphereCoordinate))
-        );
-        float3 normal = float3(
-            sphereCoordinate.x,
-            -sphereCoordinate.y,
-            sphereZ
-        );
-        float3 light = normalize(float3(-0.48, 0.38, 0.79));
-        float3 halfVector = normalize(light + float3(0.0, 0.0, 1.0));
-        float diffuse = max(0.0, dot(normal, light));
-        float specular = pow(max(0.0, dot(normal, halfVector)), 26.0);
-        float pearlShade =
-            0.54 +
-            0.34 * diffuse +
-            0.10 * pow(max(0.0, 1.0 - sphereZ), 1.6);
-        float edrSpecular =
-            specular *
-            (0.18 + 0.72 * max(0.0, in.edrHeadroom - 1.0));
-        float3 coreColor =
-            in.color.rgb * pearlShade + float3(edrSpecular);
+        float3 coreColor = in.color.rgb * in.edrHeadroom;
         float3 compositedColor = (
             coreColor * coreCoverage +
             rimColor * rimWeight
