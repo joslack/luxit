@@ -2,6 +2,8 @@
 set -euo pipefail
 
 project_dir="$(cd "$(dirname "$0")/.." && pwd)"
+"$project_dir/scripts/check-whisper-runtime.sh" --check
+
 build_dir="$project_dir/.build"
 output_app="$project_dir/dist/Luxit.app"
 output_archive="$project_dir/dist/Luxit.zip"

@@ -21,11 +21,15 @@ for script in \
   "$project_dir/scripts/bump-version.sh" \
   "$project_dir/scripts/release-bump.sh" \
   "$project_dir/scripts/release.sh" \
+  "$project_dir/scripts/check-whisper-runtime.sh" \
+  "$project_dir/scripts/install.sh" \
+  "$project_dir/scripts/build.sh" \
   "$project_dir/scripts/test-versioning.sh"; do
   zsh -n "$script"
 done
 "$project_dir/scripts/bump-version.sh" patch --dry-run >/dev/null
 "$project_dir/scripts/test-versioning.sh"
+"$project_dir/scripts/test-whisper-runtime.sh"
 
 if [[ "$(/usr/libexec/PlistBuddy \
   -c 'Print :CFBundleShortVersionString' \

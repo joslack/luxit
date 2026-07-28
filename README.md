@@ -10,7 +10,8 @@ Put your cursor in any text field, press **Caps Lock**, and speak. Press
 ## Install
 
 Luxit requires an Apple-silicon Mac running macOS 26 or later and
-[Homebrew](https://brew.sh).
+[Homebrew](https://brew.sh). The installer ensures Homebrew `whisper-cpp` is
+version 1.9.1 or newer and includes its Parakeet runtime.
 
 ```sh
 git clone https://github.com/joslack/luxit.git

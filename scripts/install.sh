@@ -13,14 +13,7 @@ vad_model_path="$model_dir/ggml-silero-v6.2.0.bin"
 vad_model_url="https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v6.2.0.bin"
 vad_model_sha256="2aa269b785eeb53a82983a20501ddf7c1d9c48e33ab63a41391ac6c9f7fb6987"
 
-if ! command -v brew >/dev/null 2>&1; then
-  echo "Homebrew is required: https://brew.sh"
-  exit 1
-fi
-
-if ! brew list whisper-cpp >/dev/null 2>&1; then
-  brew install whisper-cpp
-fi
+"$project_dir/scripts/check-whisper-runtime.sh" --install
 
 mkdir -p "$model_dir"
 if [[ ! -f "$parakeet_model_path" ]]; then
