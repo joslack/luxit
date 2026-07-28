@@ -45,23 +45,45 @@ private enum VoiceOrbConfigurationTests {
             "the processing color settles at a restrained warm tint"
         )
         expect(
-            VoiceOrbMotion.visibilityTransitionDuration == 0.42,
-            "appearance and completion share one transition duration"
+            VoiceOrbMotion.appearanceTransitionDuration == 0.56 &&
+                VoiceOrbMotion.completionTransitionDuration == 0.42,
+            "materialization and dematerialization keep deliberate timing"
         )
         expect(
-            VoiceOrbMotion.visibilityScale(0) == 0 &&
-                VoiceOrbMotion.visibilityScale(1) == 1 &&
-                VoiceOrbMotion.visibilityAlpha(0) == 0 &&
+            VoiceOrbMotion.visibilityAlpha(0) == 0 &&
                 VoiceOrbMotion.visibilityAlpha(1) == 1,
-            "the reversible visibility curves preserve their endpoints"
+            "dematerialization preserves its opacity endpoints"
         )
-        let halfwayScale = VoiceOrbMotion.visibilityScale(0.5)
         let halfwayAlpha = VoiceOrbMotion.visibilityAlpha(0.5)
         expect(
-            halfwayScale > 0 &&
-                halfwayScale < halfwayAlpha &&
-                halfwayAlpha < 1,
-            "the orb grows from its center while it fades in"
+            halfwayAlpha > 0 && halfwayAlpha < 1,
+            "dematerialization fades progressively as the field releases"
+        )
+        expect(
+            VoiceOrbMotion.materializationBlend(0) == 0 &&
+                VoiceOrbMotion.materializationBlend(1) == 1,
+            "the loose field condenses fully and can reverse cleanly"
+        )
+        expect(
+            VoiceOrbMotion.materializationFieldRadius(
+                baseRadius: 70,
+                panelExtent: 280
+            ) == 94.5 &&
+                VoiceOrbMotion.materializationFieldRadius(
+                    baseRadius: 200,
+                    panelExtent: 280
+                ) == 122,
+            "the loose field expands around the orb without clipping"
+        )
+        expect(
+            VoiceOrbMotion.materializationDotScale(0) == 0.55 &&
+                VoiceOrbMotion.materializationDotScale(1) == 1,
+            "particles are smaller while materializing and dematerializing"
+        )
+        expect(
+            VoiceOrbMotion.materializationAlpha(0, seed: 0.5) == 0 &&
+                VoiceOrbMotion.materializationAlpha(1, seed: 0.5) == 1,
+            "particles materialize with deterministic staggered opacity"
         )
         expect(
             VoiceOrbMotion.baseRadius == 70 &&

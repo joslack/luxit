@@ -260,15 +260,11 @@ private final class EdgeIndicatorView: NSView {
         let processingBlend =
             VoiceOrbMotion.processingGeometryBlend(processing)
         let progress = max(0, min(1, completion))
-        let appearanceScale =
-            VoiceOrbMotion.visibilityScale(appearanceProgress)
-        let completionScale =
-            VoiceOrbMotion.visibilityScale(1 - progress)
-        let appearanceAlpha =
-            VoiceOrbMotion.visibilityAlpha(appearanceProgress)
         let completionAlpha =
             VoiceOrbMotion.visibilityAlpha(1 - progress)
-        let visibilityScale = appearanceScale * completionScale
+        let condensation =
+            VoiceOrbMotion.materializationBlend(appearanceProgress) *
+            (1 - VoiceOrbMotion.materializationBlend(progress))
         let voice = pow(max(0, min(1, audioLevel)), 0.72)
         let displayLevel = max(
             VoiceOrbMotion.idleVisualFloor,
@@ -291,14 +287,20 @@ private final class EdgeIndicatorView: NSView {
             VoiceOrbMotion.baseRadius +
             displayLevel * VoiceOrbMotion.voiceRadiusGrowth
         ) *
-            (1 + (processingScale - 1) * processingBlend) *
-            visibilityScale
+            (1 + (processingScale - 1) * processingBlend)
         // Processing preserves the recording flow phase while a separate
         // radius modulation adds the unified breathing signal.
         let rotation = animationPhase * 0.11
         let (color, highlight) = orbColors
         let cosine = cos(rotation)
         let sine = sin(rotation)
+        let materializationFieldRadius =
+            VoiceOrbMotion.materializationFieldRadius(
+                baseRadius: baseRadius,
+                panelExtent: min(bounds.width, bounds.height)
+            )
+        let materializationDotScale =
+            VoiceOrbMotion.materializationDotScale(condensation)
         for (index, point) in points.enumerated() {
             let rotatedX = point.x * cosine - point.y * sine
             let rotatedY = point.x * sine + point.y * cosine
@@ -365,32 +367,44 @@ private final class EdgeIndicatorView: NSView {
                     sin(rotatedX * -1.9 + particleTimeY) +
                     cos(rotatedY * 1.5 + particleTimeX) * 0.55
                 ) * attractorAmount
+            let noiseX =
+                VoiceOrbGeometry.motionNoise(
+                    point: index,
+                    time:
+                        orbMotionPhase * point.velocity +
+                        point.flowPhase * 0.16,
+                    channel: 0
+                ) * jitterAmount
+            let noiseY =
+                VoiceOrbGeometry.motionNoise(
+                    point: index,
+                    time:
+                        orbMotionPhase *
+                            (0.48 + point.velocity * 1.31) +
+                        point.flowPhaseY * 0.16,
+                    channel: 1
+                ) * jitterAmount
+            let settledX =
+                rotatedX * baseRadius + flowX + attractorX + noiseX
+            let settledY =
+                rotatedY * baseRadius + flowY + attractorY + noiseY
+            let radialSeed = max(
+                0,
+                min(1, point.flowPhaseY / (2 * .pi))
+            )
+            let spawnRadius =
+                materializationFieldRadius * sqrt(radialSeed)
+            let spawnX = cos(point.flowPhase) * spawnRadius
+            let spawnY = sin(point.flowPhase) * spawnRadius
             var position = NSPoint(
                 x:
                     center.x +
-                    rotatedX * baseRadius +
-                    flowX +
-                    attractorX +
-                    VoiceOrbGeometry.motionNoise(
-                        point: index,
-                        time:
-                            orbMotionPhase * point.velocity +
-                            point.flowPhase * 0.16,
-                        channel: 0
-                    ) * jitterAmount,
+                    spawnX * (1 - condensation) +
+                    settledX * condensation,
                 y:
                     center.y +
-                    rotatedY * baseRadius +
-                    flowY +
-                    attractorY +
-                    VoiceOrbGeometry.motionNoise(
-                        point: index,
-                        time:
-                            orbMotionPhase *
-                                (0.48 + point.velocity * 1.31) +
-                            point.flowPhaseY * 0.16,
-                        channel: 1
-                    ) * jitterAmount
+                    spawnY * (1 - condensation) +
+                    settledY * condensation
             )
             var dissipation: CGFloat = 0
             if let pointerLocation {
@@ -423,14 +437,21 @@ private final class EdgeIndicatorView: NSView {
                 edgeVariation *
                 pow(1 - dissipation, 1.65) *
                 completionAlpha *
-                appearanceAlpha
+                VoiceOrbMotion.materializationAlpha(
+                    appearanceProgress,
+                    seed: point.flowPhase / (2 * .pi)
+                ) *
+                VoiceOrbMotion.materializationAlpha(
+                    1 - progress,
+                    seed: point.flowPhase / (2 * .pi)
+                )
             guard alpha > 0.008 else { continue }
             let dotRadius = max(
                 0.18,
                 point.radius *
                 (0.28 + edgeFeather * 0.72) *
                 (1 - dissipation * 0.68) *
-                visibilityScale
+                materializationDotScale
             )
             let pointColor = color.blended(
                 withFraction: min(0.72, point.intensity * 0.64),
@@ -537,7 +558,7 @@ private final class EdgeIndicator {
                 self.appearanceProgress = min(
                     1,
                     self.appearanceProgress +
-                        elapsed / VoiceOrbMotion.visibilityTransitionDuration
+                        elapsed / VoiceOrbMotion.appearanceTransitionDuration
                 )
                 self.orbMotionPhase +=
                     elapsed *
@@ -579,7 +600,7 @@ private final class EdgeIndicator {
                 self.appearanceProgress = min(
                     1,
                     self.appearanceProgress +
-                        elapsed / VoiceOrbMotion.visibilityTransitionDuration
+                        elapsed / VoiceOrbMotion.appearanceTransitionDuration
                 )
                 self.advanceProcessingTransition(elapsed: elapsed)
                 self.breathPhase += elapsed * 2.2
@@ -645,7 +666,7 @@ private final class EdgeIndicator {
         let startedAt = ProcessInfo.processInfo.systemUptime
         lastAnimationUptime = startedAt
         let duration =
-            TimeInterval(VoiceOrbMotion.visibilityTransitionDuration)
+            TimeInterval(VoiceOrbMotion.completionTransitionDuration)
         let completionTimer = Timer(
             timeInterval: animationInterval,
             repeats: true
@@ -667,7 +688,7 @@ private final class EdgeIndicator {
             self.appearanceProgress = min(
                 1,
                 self.appearanceProgress +
-                    frameElapsed / VoiceOrbMotion.visibilityTransitionDuration
+                    frameElapsed / VoiceOrbMotion.appearanceTransitionDuration
             )
             self.advanceProcessingTransition(elapsed: frameElapsed)
             self.breathPhase += frameElapsed * 2.2

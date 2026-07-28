@@ -13,14 +13,38 @@ enum VoiceOrbMotion {
     static let processingLevelFloor: CGFloat = 0.48
     static let processingMotionSpeed: CGFloat = 1.4
     static let processingTransitionDuration: CGFloat = 0.72
-    static let visibilityTransitionDuration: CGFloat = 0.42
-
-    static func visibilityScale(_ progress: CGFloat) -> CGFloat {
-        pow(clamp(progress), 3)
-    }
+    static let appearanceTransitionDuration: CGFloat = 0.56
+    static let completionTransitionDuration: CGFloat = 0.42
 
     static func visibilityAlpha(_ progress: CGFloat) -> CGFloat {
         pow(clamp(progress), 1.4)
+    }
+
+    static func materializationBlend(_ progress: CGFloat) -> CGFloat {
+        smoothstep(0, 1, progress)
+    }
+
+    static func materializationFieldRadius(
+        baseRadius: CGFloat,
+        panelExtent: CGFloat
+    ) -> CGFloat {
+        min(baseRadius * 1.35, max(0, panelExtent / 2 - 18))
+    }
+
+    static func materializationDotScale(_ condensation: CGFloat) -> CGFloat {
+        0.55 + clamp(condensation) * 0.45
+    }
+
+    static func materializationAlpha(
+        _ progress: CGFloat,
+        seed: CGFloat
+    ) -> CGFloat {
+        let stagger = clamp(seed)
+        return smoothstep(
+            stagger * 0.14,
+            0.58 + stagger * 0.18,
+            progress
+        )
     }
 
     static func advanceProcessingProgress(

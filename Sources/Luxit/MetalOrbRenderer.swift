@@ -112,13 +112,6 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
         }
 
         let progress = max(0, min(1, completion))
-        let appearanceScale =
-            VoiceOrbMotion.visibilityScale(appearance)
-        let completionScale =
-            VoiceOrbMotion.visibilityScale(1 - progress)
-        let visibilityScale = appearanceScale * completionScale
-        let appearanceAlpha =
-            VoiceOrbMotion.visibilityAlpha(appearance)
         let completionAlpha =
             VoiceOrbMotion.visibilityAlpha(1 - progress)
         let processingScale = 0.90 + pulse * 0.14
@@ -126,8 +119,7 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
             VoiceOrbMotion.baseRadius +
             displayLevel * VoiceOrbMotion.voiceRadiusGrowth
         ) *
-            (1 + (processingScale - 1) * processingBlend) *
-            visibilityScale
+            (1 + (processingScale - 1) * processingBlend)
         let rotation = animationPhase * 0.11
         let accentComponents = Self.components(of: accent)
         let highlightComponents = Self.components(of: highlight)
@@ -143,8 +135,8 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
         uniformValues[5] = Float(animationPhase)
         uniformValues[6] = Float(displayLevel)
         uniformValues[7] = Float(processing)
-        uniformValues[8] = Float(visibilityScale)
-        uniformValues[9] = Float(appearanceAlpha * completionAlpha)
+        uniformValues[8] = Float(progress)
+        uniformValues[9] = Float(completionAlpha)
         uniformValues[10] = Float(pointer?.x ?? -10_000)
         uniformValues[11] = Float(pointer?.y ?? -10_000)
         uniformValues[12] = pointer == nil ? 0 : 1
@@ -156,11 +148,18 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
         uniformValues[18] = Float(highlightComponents.blue)
         uniformValues[19] = Float(pulse)
         uniformValues[20] = Float(max(1, backingScale))
+        uniformValues[21] = Float(max(0, min(1, appearance)))
         uniformValues[22] = Float(VoiceOrbMotion.currentScale)
         uniformValues[23] = Float(VoiceOrbMotion.jitterScale)
         uniformValues[24] = Float(VoiceOrbMotion.spatialScale)
         uniformValues[25] = 1
         uniformValues[26] = Float(VoiceOrbMotion.voiceResponseScale)
+        uniformValues[27] = Float(
+            VoiceOrbMotion.materializationFieldRadius(
+                baseRadius: baseRadius,
+                panelExtent: min(bounds.width, bounds.height)
+            )
+        )
         view?.draw()
     }
 
@@ -286,6 +285,13 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
             base.x * cosine - base.y * sine,
             base.x * sine + base.y * cosine
         );
+        float appearance = clamp(u[21], 0.0, 1.0);
+        float appearanceCondensation =
+            appearance * appearance * (3.0 - 2.0 * appearance);
+        float completion = clamp(u[8], 0.0, 1.0);
+        float dispersal =
+            completion * completion * (3.0 - 2.0 * completion);
+        float condensation = appearanceCondensation * (1.0 - dispersal);
         float particleTimeX = u[5] * velocity + flowPhaseX;
         float particleTimeY =
             u[5] * (0.55 + velocity * 1.17) + flowPhaseY;
@@ -327,11 +333,20 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
             motionNoise(vertexID, noiseTimeX, 0),
             motionNoise(vertexID, noiseTimeY, 1)
         ) * jitterAmount;
+        float2 settled = rotated * u[2] + flow + jitter;
+        float radialSeed = clamp(
+            flowPhaseY / (2.0 * M_PI_F),
+            0.0,
+            1.0
+        );
+        float spawnRadius = u[27] * sqrt(radialSeed);
+        float2 spawn = float2(
+            cos(flowPhaseX),
+            sin(flowPhaseX)
+        ) * spawnRadius;
         float2 position =
             float2(u[0] * 0.5, u[1] * 0.5) +
-            rotated * u[2] +
-            flow +
-            jitter;
+            mix(spawn, settled, condensation);
 
         float dissipation = 0.0;
         if (u[12] > 0.5) {
@@ -359,7 +374,19 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
             edgeFeather *
             edgeVariation *
             pow(1.0 - dissipation, 1.65) *
-            u[9];
+            u[9] *
+            smoothstep(
+                fract(flowPhaseX / (2.0 * M_PI_F)) * 0.14,
+                0.58 +
+                    fract(flowPhaseX / (2.0 * M_PI_F)) * 0.18,
+                appearance
+            ) *
+            smoothstep(
+                fract(flowPhaseX / (2.0 * M_PI_F)) * 0.14,
+                0.58 +
+                    fract(flowPhaseX / (2.0 * M_PI_F)) * 0.18,
+                1.0 - completion
+            );
         float colorMix = min(0.72, intensity * 0.64);
         float3 color = mix(
             float3(u[13], u[14], u[15]),
@@ -379,7 +406,7 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
             radius * 2.0 *
                 (0.28 + edgeFeather * 0.72) *
                 (1.0 - dissipation * 0.68) *
-                u[8] *
+                (0.55 + condensation * 0.45) *
                 u[20]
         );
         out.color = float4(color, alpha);
