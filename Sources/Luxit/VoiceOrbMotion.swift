@@ -8,8 +8,8 @@ enum VoiceOrbMotion {
     static let voiceResponseScale: CGFloat = 1.65
     static let baseRadius: CGFloat = 70
     static let voiceRadiusGrowth: CGFloat = 15
-    static let cloudUnderlayCenterOpacity: CGFloat = 0.28
-    static let cloudUnderlayRadiusMultiplier: CGFloat = 1.32
+    static let maximumParticleEDRGain: CGFloat = 1.8
+    static let pearlHighlightAlpha: CGFloat = 0.30
 
     static let idleVisualFloor: CGFloat = 0.12
     static let processingLevelFloor: CGFloat = 0.48
@@ -69,7 +69,7 @@ enum VoiceOrbMotion {
     static func particleContrastRimOpacity(
         coreLuminance: CGFloat
     ) -> CGFloat {
-        0.20 + smoothstep(0.45, 0.82, coreLuminance) * 0.28
+        0.14 + smoothstep(0.45, 0.82, coreLuminance) * 0.46
     }
 
     static func particleContrastRimWhite(
@@ -78,35 +78,28 @@ enum VoiceOrbMotion {
         1 - smoothstep(0.45, 0.82, coreLuminance) * 0.93
     }
 
-    static func cloudUnderlayRadius(
-        baseRadius: CGFloat,
-        panelExtent: CGFloat
+    static func particleEDRGain(
+        availableHeadroom: CGFloat
     ) -> CGFloat {
         min(
-            baseRadius * cloudUnderlayRadiusMultiplier,
-            max(0, panelExtent * 0.46)
+            maximumParticleEDRGain,
+            max(1, availableHeadroom)
         )
     }
 
-    static func cloudUnderlayOpacity(
-        appearance: CGFloat,
-        completion: CGFloat
+    static func pearlBaseShade(
+        lightAmount: CGFloat
     ) -> CGFloat {
-        cloudUnderlayCenterOpacity *
-            materializationBlend(appearance) *
-            visibilityAlpha(1 - clamp(completion))
+        0.54 + clamp(lightAmount) * 0.34
     }
 
-    static func cloudUnderlayAlpha(
-        normalizedDistance: CGFloat,
-        appearance: CGFloat,
-        completion: CGFloat
+    static func pearlSpecularGain(
+        edrHeadroom: CGFloat
     ) -> CGFloat {
-        let distance = clamp(normalizedDistance)
-        return cloudUnderlayOpacity(
-            appearance: appearance,
-            completion: completion
-        ) * pow(1 - distance * distance, 1.15)
+        let headroom = particleEDRGain(
+            availableHeadroom: edrHeadroom
+        )
+        return 0.18 + 0.72 * (headroom - 1)
     }
 
     static func materializationAlpha(

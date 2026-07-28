@@ -57,83 +57,51 @@ private enum VoiceOrbConfigurationTests {
                 coreLuminance: whiteLuminance
             )
         expect(
-            abs(whiteRimOpacity - 0.48) < 0.0001 &&
+            abs(whiteRimOpacity - 0.60) < 0.0001 &&
                 abs(whiteRimWhite - 0.07) < 0.0001,
             "white particles receive a definite graphite keyline"
         )
         expect(
             VoiceOrbMotion.particleContrastRimOpacity(
                 coreLuminance: darkLuminance
-            ) == 0.20 &&
+            ) == 0.14 &&
                 VoiceOrbMotion.particleContrastRimWhite(
                     coreLuminance: darkLuminance
                 ) == 1,
             "dark particles retain a restrained pale keyline"
         )
         expect(
+            VoiceOrbMotion.particleEDRGain(
+                availableHeadroom: 0.5
+            ) == 1 &&
+                VoiceOrbMotion.particleEDRGain(
+                    availableHeadroom: 1
+                ) == 1 &&
+                VoiceOrbMotion.particleEDRGain(
+                    availableHeadroom: 3
+                ) == 1.8,
+            "particle highlights use available display headroom safely"
+        )
+        expect(
             abs(
-                VoiceOrbMotion.cloudUnderlayRadius(
-                    baseRadius: 70,
-                    panelExtent: 280
-                ) - 92.4
+                VoiceOrbMotion.pearlBaseShade(lightAmount: 0) - 0.54
             ) < 0.0001 &&
                 abs(
-                    VoiceOrbMotion.cloudUnderlayRadius(
-                        baseRadius: 200,
-                        panelExtent: 280
-                    ) - 128.8
+                    VoiceOrbMotion.pearlBaseShade(lightAmount: 1) - 0.88
                 ) < 0.0001,
-            "the contrast atmosphere stays inside the orb panel"
+            "pearl particles preserve a shadow side and lit face"
         )
         expect(
-            VoiceOrbMotion.cloudUnderlayOpacity(
-                appearance: 0,
-                completion: 0
-            ) == 0 &&
-                VoiceOrbMotion.cloudUnderlayOpacity(
-                    appearance: 1,
-                    completion: 1
-                ) == 0 &&
+            abs(
+                VoiceOrbMotion.pearlSpecularGain(edrHeadroom: 1) - 0.18
+            ) < 0.0001 &&
                 abs(
-                    VoiceOrbMotion.cloudUnderlayOpacity(
-                        appearance: 1,
-                        completion: 0
-                    ) - 0.28
-                ) < 0.0001,
-            "the contrast atmosphere follows the cloud lifecycle"
-        )
-        let centerUnderlayAlpha = VoiceOrbMotion.cloudUnderlayAlpha(
-            normalizedDistance: 0,
-            appearance: 1,
-            completion: 0
-        )
-        let middleUnderlayAlpha = VoiceOrbMotion.cloudUnderlayAlpha(
-            normalizedDistance: 0.5,
-            appearance: 1,
-            completion: 0
-        )
-        let outerUnderlayAlpha = VoiceOrbMotion.cloudUnderlayAlpha(
-            normalizedDistance: 0.75,
-            appearance: 1,
-            completion: 0
-        )
-        let fringeUnderlayAlpha = VoiceOrbMotion.cloudUnderlayAlpha(
-            normalizedDistance: 0.9,
-            appearance: 1,
-            completion: 0
-        )
-        let edgeUnderlayAlpha = VoiceOrbMotion.cloudUnderlayAlpha(
-            normalizedDistance: 1,
-            appearance: 1,
-            completion: 0
-        )
-        expect(
-            abs(centerUnderlayAlpha - 0.28) < 0.0001 &&
-                abs(middleUnderlayAlpha - 0.201) < 0.002 &&
-                abs(outerUnderlayAlpha - 0.108) < 0.002 &&
-                abs(fringeUnderlayAlpha - 0.042) < 0.002 &&
-                edgeUnderlayAlpha == 0,
-            "the contrast atmosphere fades without a visible perimeter"
+                    VoiceOrbMotion.pearlSpecularGain(
+                        edrHeadroom: 1.8
+                    ) - 0.756
+                ) < 0.0001 &&
+                VoiceOrbMotion.pearlHighlightAlpha == 0.30,
+            "pearl highlights remain visible in SDR and expand into EDR"
         )
         let firstProcessingFrame =
             VoiceOrbMotion.advanceProcessingProgress(0, elapsed: 0.1)

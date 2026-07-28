@@ -308,57 +308,6 @@ private final class EdgeIndicatorView: NSView {
             VoiceOrbMotion.materializationDotScale(
                 appearanceCondensation
             )
-        let underlayRadius = VoiceOrbMotion.cloudUnderlayRadius(
-            baseRadius: baseRadius,
-            panelExtent: min(bounds.width, bounds.height)
-        )
-        let underlayOpacity = VoiceOrbMotion.cloudUnderlayOpacity(
-            appearance: appearanceProgress,
-            completion: progress
-        )
-        if underlayOpacity > 0,
-           let underlayGradient = NSGradient(
-            colorsAndLocations:
-                (
-                    NSColor(
-                        calibratedWhite: 0.07,
-                        alpha: underlayOpacity
-                    ),
-                    0
-                ),
-                (
-                    NSColor(
-                        calibratedWhite: 0.07,
-                        alpha: underlayOpacity * 0.718
-                    ),
-                    0.5
-                ),
-                (
-                    NSColor(
-                        calibratedWhite: 0.07,
-                        alpha: underlayOpacity * 0.386
-                    ),
-                    0.75
-                ),
-                (
-                    NSColor(
-                        calibratedWhite: 0.07,
-                        alpha: underlayOpacity * 0.149
-                    ),
-                    0.9
-                ),
-                (NSColor.clear, 1)
-           ) {
-            underlayGradient.draw(
-                in: NSRect(
-                    x: center.x - underlayRadius,
-                    y: center.y - underlayRadius,
-                    width: underlayRadius * 2,
-                    height: underlayRadius * 2
-                ),
-                relativeCenterPosition: .zero
-            )
-        }
         for (index, point) in points.enumerated() {
             let rotatedX = point.x * cosine - point.y * sine
             let rotatedY = point.x * sine + point.y * cosine
@@ -544,13 +493,52 @@ private final class EdgeIndicatorView: NSView {
                     height: (dotRadius + rimWidth) * 2
                 )
             ).fill()
-            pointColor.withAlphaComponent(alpha).setFill()
+            let shadowColor = pointColor.blended(
+                withFraction:
+                    1 - VoiceOrbMotion.pearlBaseShade(lightAmount: 0),
+                of: .black
+            ) ?? pointColor
+            shadowColor.withAlphaComponent(alpha).setFill()
             NSBezierPath(
                 ovalIn: NSRect(
                     x: position.x - dotRadius,
                     y: position.y - dotRadius,
                     width: dotRadius * 2,
                     height: dotRadius * 2
+                )
+            ).fill()
+            let litRadius = dotRadius * 0.84
+            pointColor.withAlphaComponent(alpha).setFill()
+            NSBezierPath(
+                ovalIn: NSRect(
+                    x:
+                        position.x -
+                        litRadius -
+                        dotRadius * 0.10,
+                    y:
+                        position.y -
+                        litRadius +
+                        dotRadius * 0.10,
+                    width: litRadius * 2,
+                    height: litRadius * 2
+                )
+            ).fill()
+            let highlightRadius = dotRadius * 0.28
+            NSColor.white.withAlphaComponent(
+                alpha * VoiceOrbMotion.pearlHighlightAlpha
+            ).setFill()
+            NSBezierPath(
+                ovalIn: NSRect(
+                    x:
+                        position.x -
+                        highlightRadius -
+                        dotRadius * 0.25,
+                    y:
+                        position.y -
+                        highlightRadius +
+                        dotRadius * 0.24,
+                    width: highlightRadius * 2,
+                    height: highlightRadius * 2
                 )
             ).fill()
         }
