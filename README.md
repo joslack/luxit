@@ -2,210 +2,76 @@
 
 <img src="Resources/AppIcon.png" width="128" alt="Luxit app icon">
 
-For the local multi-engine speech-to-text comparison lab, see
-[Voiceprint benchmark](benchmark/README.md).
+Local voice-to-text for macOS.
 
-A tiny, fully local macOS dictation utility:
-
-- A persistent microphone icon lives in the macOS menu bar.
-- Click it for cumulative dictated hours, words, dictation count, average
-  processing latency, and effective real-time transcription speed.
-- The dashboard also provides a curated Whisper model picker, Permissions,
-  Vocabulary, Show App, Restart, and Quit controls. It is built entirely from
-  standard AppKit menu items, section headers, subtitles, separators, and
-  submenus, so macOS owns its appearance, accessibility, and dismissal.
-- Press **Caps Lock** once to start recording. Luxit maps Caps Lock to
-  an ordinary F19 HID event while it runs, bypassing macOS's built-in Caps
-  Lock activation delay. The model loads from disk in
-  parallel while you speak, so recording itself starts immediately.
-- A white, audio-reactive Voice Orb appears at the bottom-right of the display
-  containing the active text cursor. Luxit locates the insertion caret through
-  macOS Accessibility, then falls back to the focused element, focused window,
-  or mouse display when an app does not publish caret bounds. Its style, color,
-  attractor motion, and placement are intentional product behavior rather than
-  configuration options.
-- The Voice Orb maps 23 logarithmically spaced frequency bands from roughly
-  90 Hz to 8 kHz, measured with a Hann-windowed vDSP FFT, into a deterministic
-  768-particle
-  cloud: every frequency owns a stable constellation distributed across all
-  quadrants, rather than one contiguous wedge. Live voice energy adds
-  smoothly randomized movement whose wide permanent velocity range,
-  independent horizontal and vertical phases, and per-particle drift scales
-  produce liquid motion. Voice energy and spectral change accelerate the
-  global turn and strengthen the currents. A long, particle-irregular density
-  falloff creates a larger wispy perimeter without a hard circular boundary or
-  isolated protruding points. Particle radii vary independently within a
-  deliberately narrow range, with a deterministic 12% long tail of larger
-  grains for visible hierarchy. Particle size also responds subtly to overall
-  voice energy and its assigned frequency band. The field maintains a large resting volume even
-  when voice conditioning gates background noise; speech deforms and energizes
-  that volume rather than determining whether it collapses. A transparent MetalKit
-  point-sprite pipeline performs particle physics and rasterization on the
-  Apple GPU at the active display's refresh cadence, without a background
-  halo. Particles around the pointer
-  dissipate and reform, while the overlay always passes clicks through to the
-  app beneath it. AppKit remains as a renderer fallback when Metal is
-  unavailable.
-- The orb fades in over 380 milliseconds using a frame-clamped smoothstep, so
-  cold model loading cannot turn a missed frame into an opacity jump.
-- Visualization input is voice-conditioned without altering transcription
-  audio. Logarithmic speech-band weighting suppresses much of HVAC rumble and
-  high-frequency hiss, while a persistent per-band noise estimate subtracts
-  stationary background energy.
-- Press **Caps Lock** again to stop.
-- When recording ends, the Voice Orb preserves the exact rotation, current,
-  particle phases, and motion speed, then eases those live values into a
-  coherent inhale–exhale processing pulse. It remains white through the
-  handoff and only develops a restrained warm tint if processing lasts long
-  enough. When transcription completes, the still-moving field contracts and
-  fades.
-- Press **Caps Lock** again during transcription to begin the next recording
-  immediately. Up to three completed recordings are transcribed in order while
-  one additional recording is in progress.
-- Very short or quiet captures are discarded before Whisper runs. A local
-  Silero voice-activity model then rejects non-speech audio before decoding,
-  preventing Whisper from inventing text from steady room noise.
-- Silero receives a fresh, explicitly reset recurrent context for every
-  recording. A second lower-threshold pass protects quiet speech without
-  carrying detector state between utterances.
-- The final text is pasted wherever the cursor is with one trailing space, so
-  consecutive dictation segments remain separated.
-
-The model picker exposes only three fully wired choices: Parakeet Metal
-(recommended, fastest, and most accurate in the local benchmark), Parakeet CPU
-(the same transcript quality without Metal), and whisper.cpp greedy (the
-strongest wired Whisper fallback). The privacy-safe aggregate measurements and
-the complete seven-backend comparison are published in
-[the benchmark report](benchmark/results/README.md). Selecting an entry never
-starts a download; a local model must already be installed.
-The selected model is loaded lazily on the first Caps Lock press and stays warm for
-consecutive dictations. After ten idle minutes it becomes eligible for unloading, but
-is released only if macOS reports memory pressure. Audio never leaves the Mac, and the
-clipboard is restored after insertion.
-
-Caps Lock is temporarily remapped at macOS's HID layer to F19 and read through
-a Quartz event tap. The app restores the prior HID mapping when it quits. The
-event tap consumes F19, with the original Caps Lock event retained as a
-fallback if remapping fails, so Caps Lock does not capitalize typed text. The
-physical Caps Lock LED is intentionally unused; the screen-edge indicator is
-the authoritative recording signal.
-
-The audio engine is prepared before the hotkey listener becomes active. On a
-Caps Lock press, the recording indicator is ordered onscreen before microphone
-startup, and Whisper loading begins only after audio capture is ready.
-
-After system or display wake, Luxit recreates the keyboard event tap and
-retries the Caps Lock-to-F19 mapping with bounded backoff until `hidutil`
-confirms that the mapping is active. It also rebuilds the display indicator
-surfaces after display topology and wake changes. Restart
-and Quit restore the original HID
-mapping before exiting; they bypass ggml's unsafe process-exit Metal destructor
-after all user-visible state has been cleaned up.
-
-Queued results are inserted in recording order at whichever cursor is active
-when each transcription finishes. If three transcriptions are already pending,
-the menu-bar status reports that the queue is full and the app sounds a beep
-instead of silently dropping the Caps Lock action.
+Put your cursor in any text field, press **Caps Lock**, and speak. Press
+**Caps Lock** again and Luxit inserts the transcription where your cursor is.
 
 ## Install
 
-Luxit currently requires an Apple-silicon Mac running macOS 26 or later,
-plus [Homebrew](https://brew.sh). The installer builds from source; no audio,
-models, certificates, or private keys are stored in this repository.
+Luxit requires an Apple-silicon Mac running macOS 26 or later and
+[Homebrew](https://brew.sh).
 
 ```sh
-./scripts/install.sh
-```
-
-The installer builds the native app, installs it as
-`/Applications/Luxit.app`, installs the checksum-verified 638 MiB Parakeet
-Metal Q8 model and 885 KB Silero VAD model if necessary, and creates a per-user
-LaunchAgent so Luxit is warm after login. Fresh installations default to
-Parakeet Metal; optional models are never downloaded merely by selecting them.
-
-For a private local build, run `scripts/create-local-signing-identity.sh` once
-before installing. It creates an app-specific self-signed identity in the login
-keychain. Subsequent builds use the same designated requirement, so macOS keeps
-Microphone, Accessibility, and Input Monitoring permissions across updates.
-The certificate is trusted only for code signing and the private key grants
-access to `/usr/bin/codesign`; remove the identity and certificate in Keychain
-Access if this local trust is no longer wanted. Public distribution should use
-an Apple Developer ID identity instead. If no persistent identity is available,
-normal builds now fail with remediation guidance unless `LUXIT_ALLOW_ADHOC_SIGNING=1`
-is set explicitly for testing.
-
-To run a non-persistent local build intentionally:
-
-```sh
-LUXIT_ALLOW_ADHOC_SIGNING=1 ./scripts/build.sh
-```
-
-On first launch, approve:
-
-1. **Microphone** access.
-2. **Accessibility** access (needed to capture Caps Lock and paste text).
-3. **Input Monitoring** access (needed to receive Caps Lock globally).
-
-If Caps Lock does not respond immediately after approval, click the microphone
-menu-bar icon, choose **Permissions**, and confirm all three entries show a
-checkmark.
-
-If you quit Luxit, reopen it from Applications or Spotlight. It also
-starts automatically the next time you log in.
-
-### Installing on another or work-managed Mac
-
-Luxit uses the bundle identifier `com.joslack.luxit`. macOS grants privacy
-permissions to a particular signed application on a particular Mac, so copying
-an already-built app does not transfer its trust or permissions from another
-computer. The predictable setup is to clone the repository on the destination
-Mac, create a persistent local signing identity there, and then install:
-
-```sh
+git clone https://github.com/joslack/luxit.git
+cd luxit
 ./scripts/create-local-signing-identity.sh
 ./scripts/install.sh
 ```
 
-Approve Microphone, Accessibility, and Input Monitoring for Luxit when prompted.
-If another local dictation app already has those permissions, that is a good
-indication that the Mac's management policy allows this setup, but Luxit still
-needs its own approvals. Corporate device management can disable these controls;
-if they are locked, IT approval or a Developer ID-signed and notarized release
-is required.
+The signing-identity step is needed only once. It lets macOS keep Luxit's
+permissions when you update the app. Later updates only need:
 
-Luxit can be installed alongside another Whisper application because it has its
-own bundle identifier. Do not run both dictation apps simultaneously if both
-listen for Caps Lock. The standard installer fetches Parakeet Metal Q8 and
-Silero; other transcription models are not downloaded merely by selecting them
-and must be installed explicitly.
+```sh
+./scripts/install.sh
+```
 
-## Accuracy and vocabulary
+On first launch, approve **Microphone**, **Accessibility**, and
+**Input Monitoring** access. Luxit then runs from the menu bar and starts
+automatically when you log in. If Caps Lock does nothing, open
+**Permissions** from the menu-bar menu and enable any missing access in System
+Settings.
 
-Choose **Open vocabulary prompt…** from the menu-bar icon and add names,
-acronyms, product names, or technical terms that Whisper should favor.
+On first install, Luxit downloads the recommended Parakeet Metal and voice
+activity models. Other model choices are not downloaded automatically.
 
-## Build only
+## Use
+
+1. Focus the text field where you want to type.
+2. Press **Caps Lock** and speak.
+3. Press **Caps Lock** again and keep the field focused until the text appears.
+
+The white orb shows that Luxit is listening, then gently pulses while it
+transcribes. All audio and transcription stay on your Mac.
+
+## Benchmarks
+
+These results use 20 private English dictation samples, decoded four times by
+each backend on the same M3 Pro MacBook Pro with 18 GB of unified memory.
+Lower latency and word error rate are better.
+
+| Backend | Warm p50 | Word error rate | Keyword recall |
+|---|---:|---:|---:|
+| **Parakeet TDT v3 Q8 Metal** | **88.9 ms** | **6.09%** | **91.5%** |
+| Parakeet TDT v3 Q8 CPU | 145.7 ms | **6.09%** | **91.5%** |
+| MLX Whisper large-v3-turbo 4-bit | 659.2 ms | 8.41% | 82.3% |
+| whisper.cpp turbo Q5 greedy | 1548.9 ms | 9.14% | 85.2% |
+| whisper.cpp turbo Q5 baseline | 1599.8 ms | 9.38% | 84.9% |
+| WhisperKit distil-large-v3 | 1758.8 ms | 12.02% | 77.8% |
+| WhisperKit large-v3-turbo | 2040.8 ms | 9.53% | 85.2% |
+
+Parakeet Metal was both the fastest and tied for the most accurate backend, so
+it is Luxit's default. See the
+[full methodology and privacy-safe aggregate data](benchmark/results/README.md)
+for cold-start latency, p90 latency, character error rate, and reproducibility
+details. No recordings or private transcripts are committed to this repository.
+
+## Development
 
 ```sh
 ./scripts/test.sh
-./scripts/sign-app-shell-test.sh
 ./scripts/build.sh
-ditto -x -k dist/Luxit.zip /private/tmp/luxit-preview
-open /private/tmp/luxit-preview/Luxit.app
 ```
-
-After validating an existing signed ZIP, install that exact artifact without a
-second build or signing prompt:
-
-```sh
-./scripts/install.sh --use-existing-build
-```
-
-## Why final text instead of live text?
-
-Whisper revises earlier words as later context arrives. Committing once after the
-second Caps Lock press produces materially better punctuation and word choice.
-The recording begins immediately; only the final insertion waits for inference.
 
 ## License
 
