@@ -15,6 +15,7 @@ struct VoiceAnimationFrame {
 final class VoiceAnimationFilter {
     private var noiseEstimate: [Float] = []
     private var hasNoiseBaseline = false
+    private var tonalBackground: Float = 0
 
     func process(level: Float, spectrum: [Float]) -> VoiceAnimationFrame {
         guard !spectrum.isEmpty else {
@@ -89,12 +90,38 @@ final class VoiceAnimationFilter {
         let stationaryConfidence: Float = hasNoiseBaseline
             ? 0.08 + residualFraction * 0.92
             : 1
+        let spectralPeakShare =
+            (filtered.max() ?? 0) / max(residualEnergy, 0.000_000_1)
+        let tonalConfidence = Self.clamp(
+            (spectralPeakShare - 0.42) / 0.30
+        )
+        let audibleConfidence = Self.clamp(
+            (level - 0.0035) / 0.0065
+        )
+        let tonalTarget = tonalConfidence * audibleConfidence
+        let broadSpeechLike =
+            spectralPeakShare < 0.38 && bandConfidence > 0.55
+        let tonalRate: Float
+        if tonalTarget > tonalBackground {
+            tonalRate = 0.35
+        } else {
+            tonalRate = broadSpeechLike ? 0.18 : 0.035
+        }
+        tonalBackground +=
+            (tonalTarget - tonalBackground) * tonalRate
+
+        // Phone speakers and notification sounds often produce a sustained,
+        // narrow spectral peak inside the speech band. Attenuate that pattern
+        // softly and retain state between frames so note changes cannot create
+        // one-frame bursts of orb motion. Real speech normally spreads energy
+        // across several harmonic and formant bands.
+        let tonalGate = 1 - tonalBackground * 0.85
         let confidence = Self.clamp(
             bandConfidence * stationaryConfidence
-        )
+        ) * tonalGate
         return VoiceAnimationFrame(
             level: level * pow(confidence, 0.68),
-            spectrum: filtered,
+            spectrum: filtered.map { $0 * tonalGate },
             voiceConfidence: confidence
         )
     }

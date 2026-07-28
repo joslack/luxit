@@ -53,6 +53,53 @@ private enum VoiceAnimationFilterTests {
             foreground.level > repeatedBackground.level,
             "new voice energy should survive learned noise subtraction"
         )
+
+        let musicFilter = VoiceAnimationFilter()
+        let holdTone = spectrum(peakBand: 12, amplitude: 1)
+        let firstHoldFrame = musicFilter.process(
+            level: 0.012,
+            spectrum: holdTone
+        )
+        var settledHoldFrame = firstHoldFrame
+        for _ in 0..<11 {
+            settledHoldFrame = musicFilter.process(
+                level: 0.012,
+                spectrum: holdTone
+            )
+        }
+        expect(
+            settledHoldFrame.level < firstHoldFrame.level * 0.5,
+            "sustained tonal background should fade out of the animation"
+        )
+
+        let speechFilter = VoiceAnimationFilter()
+        let quietSpeech = multiFormantSpectrum(
+            bands: [7, 11, 15],
+            amplitude: 0.7
+        )
+        let quietVoice = speechFilter.process(
+            level: 0.008,
+            spectrum: quietSpeech
+        )
+        expect(
+            quietVoice.level > settledHoldFrame.level,
+            "quiet multi-formant speech should remain more visible than hold music"
+        )
+
+        let voiceOverHold = holdTone.enumerated().map { index, energy in
+            energy + (quietSpeech[index] * 1.2)
+        }
+        var recoveredVoice = settledHoldFrame
+        for _ in 0..<5 {
+            recoveredVoice = musicFilter.process(
+                level: 0.02,
+                spectrum: voiceOverHold
+            )
+        }
+        expect(
+            recoveredVoice.level > settledHoldFrame.level * 2,
+            "broad nearby speech should reopen the gate over hold music"
+        )
         print("VoiceAnimationFilterTests passed")
     }
 
@@ -61,5 +108,12 @@ private enum VoiceAnimationFilterTests {
         amplitude: Float
     ) -> [Float] {
         (0..<23).map { $0 == peakBand ? amplitude : 0 }
+    }
+
+    private static func multiFormantSpectrum(
+        bands: Set<Int>,
+        amplitude: Float
+    ) -> [Float] {
+        (0..<23).map { bands.contains($0) ? amplitude : 0 }
     }
 }
