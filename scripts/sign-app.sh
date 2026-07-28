@@ -51,7 +51,7 @@ if [[ "$identity" == "Luxit Local Signing" ||
     exit 1
   fi
   print -r -- \
-    "designated => identifier \"com.edgewhisper.local\" and certificate leaf = H\"$certificate_sha\"" \
+    "designated => identifier \"com.joslack.luxit\" and certificate leaf = H\"$certificate_sha\"" \
     > "$requirements_file"
   codesign \
     --force \

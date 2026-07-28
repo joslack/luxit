@@ -31,23 +31,9 @@ private func withSavedCatalogDefaults(_ body: () -> Void) {
 private enum ModelCatalogTests {
     static func main() {
         let ranked = TranscriptionModelProfile.rankedProfiles
-        expect(ranked.count == 7, "catalog exposes seven ranked profiles")
         expect(
-            Set(ranked.map(\.benchmarkRank)) == Set([1, 2, 3, 4, 5, 6, 7]),
-            "benchmark ranks are fully populated 1 through 7"
-        )
-
-        let wiredProfiles = Set(
-            TranscriptionModelProfile.allCases.filter(\.isImplementedInLuxit)
-        )
-        expect(
-            wiredProfiles == Set([
-                .whisperCppGreedy,
-                .whisperCppBaseline,
-                .parakeetMetal,
-                .parakeetCPU
-            ]),
-            "expected wired profiles include both Parakeet profiles"
+            ranked == [.parakeetMetal, .parakeetCPU, .whisperCppGreedy],
+            "catalog exposes only the three useful wired profiles"
         )
         expect(
             TranscriptionModelProfile.parakeetMetal.supportsLocalSelection,
@@ -57,11 +43,6 @@ private enum ModelCatalogTests {
             TranscriptionModelProfile.parakeetCPU.supportsLocalSelection,
             "parakeet cpu profile is selectable"
         )
-        expect(
-            !TranscriptionModelProfile.whisperKitTurbo.supportsLocalSelection,
-            "unsupported catalog entries cannot be selected locally"
-        )
-
         let unavailableGreedy = TranscriptionModelProfile.whisperCppGreedy.availability(
             fileExists: { _ in false },
             commandExists: { _ in false }
@@ -132,10 +113,32 @@ private enum ModelCatalogTests {
         withSavedCatalogDefaults {
             let defaults = UserDefaults.standard
             defaults.removeObject(forKey: "luxit.transcriptionProfile")
+            defaults.removeObject(forKey: "whisper.model")
+            expect(
+                TranscriptionModelProfile.saved == .parakeetMetal,
+                "fresh installs default to Parakeet Metal"
+            )
+        }
+
+        withSavedCatalogDefaults {
+            let defaults = UserDefaults.standard
+            defaults.removeObject(forKey: "luxit.transcriptionProfile")
             defaults.set("ggml-large-v3-turbo-q5_0.bin", forKey: "whisper.model")
             expect(
-                TranscriptionModelProfile.saved == .whisperCppBaseline,
-                "legacy whisper.cpp large profile keys still map to baseline"
+                TranscriptionModelProfile.saved == .whisperCppGreedy,
+                "legacy whisper.cpp large profile keys migrate to greedy"
+            )
+        }
+
+        withSavedCatalogDefaults {
+            let defaults = UserDefaults.standard
+            defaults.set(
+                "whisper-cpp-baseline-v3-turbo-q5_0",
+                forKey: "luxit.transcriptionProfile"
+            )
+            expect(
+                TranscriptionModelProfile.saved == .whisperCppGreedy,
+                "removed baseline profile migrates to the wired Whisper fallback"
             )
         }
 

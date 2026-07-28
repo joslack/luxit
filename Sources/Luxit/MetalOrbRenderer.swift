@@ -78,7 +78,7 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
         orbMotionPhase: CGFloat,
         animationPhase: CGFloat,
         pulse: CGFloat,
-        processing: Bool,
+        processingProgress: CGFloat,
         completion: CGFloat,
         appearance: CGFloat,
         pointer: NSPoint?,
@@ -87,8 +87,17 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
         bounds: NSRect
     ) {
         guard bounds.width > 0, bounds.height > 0 else { return }
+        let processing = max(0, min(1, processingProgress))
+        let processingBlend =
+            VoiceOrbMotion.processingGeometryBlend(processing)
         let voice = pow(max(0, min(1, level)), 0.72)
-        let displayLevel = processing ? max(0.48, voice) : voice
+        let displayLevel = max(
+            VoiceOrbMotion.idleVisualFloor,
+            max(
+                voice,
+                VoiceOrbMotion.processingLevelFloor * processingBlend
+            )
+        )
         let strongestBand = spectrum.max() ?? 0
         let normalizedSpectrum = strongestBand > 0
             ? spectrum.map { max(0, min(1, $0 / strongestBand)) }
@@ -105,8 +114,9 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
         let progress = max(0, min(1, completion))
         let completionScale = pow(1 - progress, 3)
         let completionAlpha = pow(1 - progress, 1.4)
+        let processingScale = 0.90 + pulse * 0.14
         let baseRadius = (56 + displayLevel * 12) *
-            (processing ? 0.90 + pulse * 0.14 : 1) *
+            (1 + (processingScale - 1) * processingBlend) *
             completionScale
         let rotation = animationPhase * 0.11
         let accentComponents = Self.components(of: accent)
@@ -122,7 +132,7 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
         uniformValues[4] = Float(orbMotionPhase)
         uniformValues[5] = Float(animationPhase)
         uniformValues[6] = Float(displayLevel)
-        uniformValues[7] = processing ? 1 : 0
+        uniformValues[7] = Float(processing)
         uniformValues[8] = Float(completionScale)
         uniformValues[9] = Float(completionAlpha)
         uniformValues[10] = Float(pointer?.x ?? -10_000)

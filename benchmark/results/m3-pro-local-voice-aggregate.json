@@ -1,0 +1,238 @@
+{
+  "schema_version": 1,
+  "generated_on": "2026-07-28",
+  "hardware": {
+    "model": "MacBook Pro",
+    "chip": "Apple M3 Pro",
+    "cpu_cores": 11,
+    "memory_gb": 18,
+    "architecture": "arm64",
+    "macos_version": "26.5.1"
+  },
+  "cohort": {
+    "language": "English",
+    "private_utterances": 20,
+    "runs_per_backend": 4,
+    "cold_runs_per_backend": 20,
+    "warm_runs_per_backend": 60,
+    "unique_audio_seconds": 105.5,
+    "comparison_note": "Every backend used the same private recordings and references. This is a product-choice comparison, not an architecture-controlled study."
+  },
+  "selection": {
+    "best_pareto": "transducer-libparakeet-v3-q8-0-metal",
+    "fastest_warm": "transducer-libparakeet-v3-q8-0-metal",
+    "most_accurate": [
+      "transducer-libparakeet-v3-q8-0-metal",
+      "transducer-libparakeet-cli-v3-q8-0"
+    ],
+    "luxit_menu": [
+      "transducer-libparakeet-v3-q8-0-metal",
+      "transducer-libparakeet-cli-v3-q8-0",
+      "whisper-cpp-fast-greedy-v3-turbo-q5_0"
+    ],
+    "rationale": "Parakeet Metal dominates the completed cohort on accuracy and latency. CPU Parakeet preserves its transcript quality as a fallback. whisper.cpp greedy is the strongest wired alternative architecture."
+  },
+  "pareto_frontier": [
+    "transducer-libparakeet-v3-q8-0-metal"
+  ],
+  "backends": [
+    {
+      "backend_id": "transducer-libparakeet-v3-q8-0-metal",
+      "name": "Parakeet TDT 0.6B v3 Q8_0 (Metal)",
+      "family": "transducer",
+      "runtime": "libparakeet",
+      "execution": "Metal",
+      "available_in_luxit": true,
+      "measurements": {
+        "cold": 20,
+        "warm": 60
+      },
+      "latency_ms": {
+        "cold_p50": 346.6,
+        "warm_p50": 88.9,
+        "warm_mean": 93.3,
+        "warm_p90": 110.9
+      },
+      "warm_realtime_multiple_p50": 54.3,
+      "accuracy": {
+        "macro_wer": 0.0609,
+        "macro_cer": 0.0399,
+        "keyword_recall": 0.915,
+        "exact_normalized_rate": 0.7
+      },
+      "accuracy_rank": 1,
+      "warm_latency_rank": 1
+    },
+    {
+      "backend_id": "transducer-libparakeet-cli-v3-q8-0",
+      "name": "Parakeet TDT 0.6B v3 Q8_0 (CPU)",
+      "family": "transducer",
+      "runtime": "libparakeet",
+      "execution": "CPU, 4 threads",
+      "available_in_luxit": true,
+      "measurements": {
+        "cold": 20,
+        "warm": 60
+      },
+      "latency_ms": {
+        "cold_p50": 530.5,
+        "warm_p50": 145.7,
+        "warm_mean": 161.5,
+        "warm_p90": 206.1
+      },
+      "warm_realtime_multiple_p50": 32.9,
+      "accuracy": {
+        "macro_wer": 0.0609,
+        "macro_cer": 0.0399,
+        "keyword_recall": 0.915,
+        "exact_normalized_rate": 0.7
+      },
+      "accuracy_rank": 2,
+      "warm_latency_rank": 2
+    },
+    {
+      "backend_id": "mlx-whisper-turbo-4bit",
+      "name": "Whisper large-v3-turbo 4-bit",
+      "family": "whisper",
+      "runtime": "mlx-audio",
+      "execution": "MLX",
+      "available_in_luxit": false,
+      "measurements": {
+        "cold": 20,
+        "warm": 60
+      },
+      "latency_ms": {
+        "cold_p50": 2000.8,
+        "warm_p50": 659.2,
+        "warm_mean": 674.8,
+        "warm_p90": 737.5
+      },
+      "warm_realtime_multiple_p50": 7.3,
+      "accuracy": {
+        "macro_wer": 0.0841,
+        "macro_cer": 0.0574,
+        "keyword_recall": 0.8225,
+        "exact_normalized_rate": 0.55
+      },
+      "accuracy_rank": 3,
+      "warm_latency_rank": 3
+    },
+    {
+      "backend_id": "whisper-cpp-fast-greedy-v3-turbo-q5_0",
+      "name": "Whisper large-v3-turbo Q5_0 (greedy)",
+      "family": "whisper",
+      "runtime": "whisper.cpp",
+      "execution": "Metal + Accelerate",
+      "available_in_luxit": true,
+      "measurements": {
+        "cold": 20,
+        "warm": 60
+      },
+      "latency_ms": {
+        "cold_p50": 1843.6,
+        "warm_p50": 1548.9,
+        "warm_mean": 1581.1,
+        "warm_p90": 1726.6
+      },
+      "warm_realtime_multiple_p50": 3.1,
+      "accuracy": {
+        "macro_wer": 0.0914,
+        "macro_cer": 0.0724,
+        "keyword_recall": 0.8517,
+        "exact_normalized_rate": 0.5
+      },
+      "accuracy_rank": 4,
+      "warm_latency_rank": 4
+    },
+    {
+      "backend_id": "whisper-cpp-baseline-v3-turbo-q5_0",
+      "name": "Whisper large-v3-turbo Q5_0 (baseline)",
+      "family": "whisper",
+      "runtime": "whisper.cpp",
+      "execution": "Metal + Accelerate",
+      "available_in_luxit": false,
+      "measurements": {
+        "cold": 20,
+        "warm": 60
+      },
+      "latency_ms": {
+        "cold_p50": 1975.4,
+        "warm_p50": 1599.8,
+        "warm_mean": 1637.2,
+        "warm_p90": 1789.7
+      },
+      "warm_realtime_multiple_p50": 3.0,
+      "accuracy": {
+        "macro_wer": 0.0938,
+        "macro_cer": 0.0741,
+        "keyword_recall": 0.8492,
+        "exact_normalized_rate": 0.5
+      },
+      "accuracy_rank": 5,
+      "warm_latency_rank": 5
+    },
+    {
+      "backend_id": "whisperkit-distil-large-v3",
+      "name": "WhisperKit distil-large-v3",
+      "family": "whisper",
+      "runtime": "WhisperKit",
+      "execution": "Core ML",
+      "available_in_luxit": false,
+      "measurements": {
+        "cold": 20,
+        "warm": 60
+      },
+      "latency_ms": {
+        "cold_p50": 1878.7,
+        "warm_p50": 1758.8,
+        "warm_mean": 1762.1,
+        "warm_p90": 1788.3
+      },
+      "warm_realtime_multiple_p50": 2.7,
+      "accuracy": {
+        "macro_wer": 0.1202,
+        "macro_cer": 0.0644,
+        "keyword_recall": 0.7775,
+        "exact_normalized_rate": 0.4
+      },
+      "accuracy_rank": 7,
+      "warm_latency_rank": 6
+    },
+    {
+      "backend_id": "whisperkit-large-v3-turbo",
+      "name": "WhisperKit large-v3-turbo",
+      "family": "whisper",
+      "runtime": "WhisperKit",
+      "execution": "Core ML",
+      "available_in_luxit": false,
+      "measurements": {
+        "cold": 20,
+        "warm": 60
+      },
+      "latency_ms": {
+        "cold_p50": 2063.0,
+        "warm_p50": 2040.8,
+        "warm_mean": 2047.6,
+        "warm_p90": 2080.3
+      },
+      "warm_realtime_multiple_p50": 2.3,
+      "accuracy": {
+        "macro_wer": 0.0953,
+        "macro_cer": 0.0793,
+        "keyword_recall": 0.8517,
+        "exact_normalized_rate": 0.5
+      },
+      "accuracy_rank": 6,
+      "warm_latency_rank": 7
+    }
+  ],
+  "privacy": {
+    "contains_audio": false,
+    "contains_transcripts": false,
+    "contains_references": false,
+    "contains_keywords": false,
+    "contains_recording_or_result_ids": false,
+    "contains_timestamps": false,
+    "contains_local_paths_or_service_urls": false
+  }
+}

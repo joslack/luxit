@@ -20,11 +20,12 @@ struct VoiceOrbPoint: Equatable {
 /// decorative.
 enum VoiceOrbGeometry {
     private static let goldenAngle = CGFloat.pi * (3 - sqrt(5))
+    static let defaultPointCount = 768
 
     static func points(
         spectrum: [CGFloat],
         level: CGFloat,
-        count: Int = 512
+        count: Int = defaultPointCount
     ) -> [VoiceOrbPoint] {
         guard count > 0 else { return [] }
         let profile = spectrum.isEmpty ? [CGFloat.zero] : spectrum.map {

@@ -24,7 +24,7 @@ enum DiagnosticLog {
     private static let url = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Application Support/EdgeWhisper/edgewhisper.log")
     private static let queue = DispatchQueue(
-        label: "com.edgewhisper.diagnostic-log",
+        label: "com.joslack.luxit.diagnostic-log",
         qos: .utility
     )
     private static var handle: FileHandle?
@@ -98,6 +98,9 @@ private final class EdgeIndicatorView: NSView {
     var pulse: CGFloat = 0 {
         didSet { refreshVisuals() }
     }
+    var processingProgress: CGFloat = 0 {
+        didSet { refreshVisuals() }
+    }
     var animationPhase: CGFloat = 0 {
         didSet { refreshVisuals() }
     }
@@ -145,14 +148,14 @@ private final class EdgeIndicatorView: NSView {
         case .recording:
             drawVoiceOrb()
         case .processing:
-            drawVoiceOrb(processing: true)
+            drawVoiceOrb(processingProgress: processingProgress)
         case .completing:
             drawVoiceOrb(
-                processing: true,
+                processingProgress: processingProgress,
                 completion: completionProgress
             )
         case .error:
-            drawVoiceOrb(processing: true)
+            drawVoiceOrb(processingProgress: 1)
         case .hidden:
             return
         }
@@ -183,8 +186,6 @@ private final class EdgeIndicatorView: NSView {
         let usesMetalOrb = indicatorState != .hidden
         metalOrbView?.isHidden = !usesMetalOrb
         guard usesMetalOrb, let metalOrbRenderer else { return }
-        let processing =
-            indicatorState != .recording
         let (accent, highlight) = orbColors
         metalOrbRenderer.update(
             spectrum: audioProfile,
@@ -192,7 +193,7 @@ private final class EdgeIndicatorView: NSView {
             orbMotionPhase: orbMotionPhase,
             animationPhase: animationPhase,
             pulse: pulse,
-            processing: processing,
+            processingProgress: processingProgress,
             completion: completionProgress,
             appearance: appearanceProgress,
             pointer: pointerLocation,
@@ -214,14 +215,22 @@ private final class EdgeIndicatorView: NSView {
     private var orbColors: (accent: NSColor, highlight: NSColor) {
         switch indicatorState {
         case .processing, .completing:
+            let colorBlend =
+                VoiceOrbMotion.processingColorBlend(processingProgress)
             return (
-                processingColor,
-                NSColor(
+                NSColor.white.blended(
+                    withFraction: colorBlend,
+                    of: processingColor
+                ) ?? .white,
+                NSColor.white.blended(
+                    withFraction: colorBlend,
+                    of: NSColor(
                     calibratedRed: 1,
                     green: 0.87,
                     blue: 0.52,
                     alpha: 1
-                )
+                    )
+                ) ?? .white
             )
         case .error:
             return (
@@ -244,9 +253,12 @@ private final class EdgeIndicatorView: NSView {
     }
 
     private func drawVoiceOrb(
-        processing: Bool = false,
+        processingProgress: CGFloat = 0,
         completion: CGFloat = 0
     ) {
+        let processing = max(0, min(1, processingProgress))
+        let processingBlend =
+            VoiceOrbMotion.processingGeometryBlend(processing)
         let progress = max(0, min(1, completion))
         let completionScale = 1 - (1 - pow(1 - progress, 3))
         let completionAlpha = pow(1 - progress, 1.4)
@@ -255,7 +267,13 @@ private final class EdgeIndicatorView: NSView {
             appearanceProgress *
             (3 - 2 * appearanceProgress)
         let voice = pow(max(0, min(1, audioLevel)), 0.72)
-        let displayLevel = processing ? max(0.48, voice) : voice
+        let displayLevel = max(
+            VoiceOrbMotion.idleVisualFloor,
+            max(
+                voice,
+                VoiceOrbMotion.processingLevelFloor * processingBlend
+            )
+        )
         let strongestBand = audioProfile.max() ?? 0
         let orbSpectrum = strongestBand > 0
             ? audioProfile.map { max(0, min(1, $0 / strongestBand)) }
@@ -265,8 +283,9 @@ private final class EdgeIndicatorView: NSView {
             level: displayLevel
         )
         let center = NSPoint(x: bounds.midX, y: bounds.midY)
+        let processingScale = 0.90 + pulse * 0.14
         let baseRadius = (56 + displayLevel * 12) *
-            (processing ? 0.90 + pulse * 0.14 : 1) *
+            (1 + (processingScale - 1) * processingBlend) *
             completionScale
         // Processing preserves the recording flow phase while a separate
         // radius modulation adds the unified breathing signal.
@@ -452,6 +471,7 @@ private final class EdgeIndicator {
     private var orbMotionSpeed: CGFloat = 0
     private var lastAnimationUptime: TimeInterval = 0
     private var appearanceProgress: CGFloat = 0
+    private var processingProgress: CGFloat = 0
     private let voiceAnimationFilter = VoiceAnimationFilter()
     private var targetDisplayID: NSNumber?
 
@@ -473,6 +493,7 @@ private final class EdgeIndicator {
             orbMotionSpeed = 0
             phase = 0
             appearanceProgress = 0
+            processingProgress = 0
             let target = resolveTargetDisplay()
             targetDisplayID = target.displayID
             DiagnosticLog.write(
@@ -483,8 +504,10 @@ private final class EdgeIndicator {
             // Preserve the exact flow phase from recording and begin a
             // separate breathing cycle at the bottom of an inhale.
             breathPhase = -.pi / 2
+            processingProgress = 0
         } else if state == .error {
             appearanceProgress = 1
+            processingProgress = 1
         } else if targetDisplayID == nil {
             targetDisplayID = resolveTargetDisplay().displayID
         }
@@ -526,6 +549,7 @@ private final class EdgeIndicator {
                     surface.view.animationPhase = self.phase
                     surface.view.appearanceProgress =
                         self.appearanceProgress
+                    surface.view.processingProgress = 0
                 }
                 self.updatePointerDissipation()
             }
@@ -549,6 +573,7 @@ private final class EdgeIndicator {
                     1,
                     self.appearanceProgress + elapsed / 0.38
                 )
+                self.advanceProcessingTransition(elapsed: elapsed)
                 self.breathPhase += elapsed * 2.2
                 self.orbMotionPhase +=
                     elapsed *
@@ -569,6 +594,10 @@ private final class EdgeIndicator {
                     surface.view.orbMotionPhase = self.orbMotionPhase
                     surface.view.appearanceProgress =
                         self.appearanceProgress
+                    surface.view.processingProgress =
+                        self.processingProgress
+                    surface.view.audioLevel = self.currentAudioLevel
+                    surface.view.audioProfile = self.currentAudioProfile
                 }
                 self.updatePointerDissipation()
             }
@@ -630,6 +659,7 @@ private final class EdgeIndicator {
                 1,
                 self.appearanceProgress + frameElapsed / 0.38
             )
+            self.advanceProcessingTransition(elapsed: frameElapsed)
             self.breathPhase += frameElapsed * 2.2
             self.orbMotionPhase +=
                 frameElapsed *
@@ -653,6 +683,10 @@ private final class EdgeIndicator {
                 surface.view.orbMotionPhase = self.orbMotionPhase
                 surface.view.appearanceProgress =
                     self.appearanceProgress
+                surface.view.processingProgress =
+                    self.processingProgress
+                surface.view.audioLevel = self.currentAudioLevel
+                surface.view.audioProfile = self.currentAudioProfile
             }
             self.updatePointerDissipation()
             if progress >= 1 {
@@ -663,6 +697,22 @@ private final class EdgeIndicator {
         }
         timer = completionTimer
         RunLoop.main.add(completionTimer, forMode: .common)
+    }
+
+    private func advanceProcessingTransition(elapsed: CGFloat) {
+        processingProgress = VoiceOrbMotion.advanceProcessingProgress(
+            processingProgress,
+            elapsed: elapsed
+        )
+        let settling = min(1, elapsed * 2.2)
+        currentAudioLevel += (0.22 - currentAudioLevel) * settling
+        for index in currentAudioProfile.indices {
+            currentAudioProfile[index] +=
+                (0.18 - currentAudioProfile[index]) * settling
+        }
+        orbMotionSpeed +=
+            (VoiceOrbMotion.processingMotionSpeed - orbMotionSpeed) *
+            settling
     }
 
     func setAudioLevel(_ level: Float, spectrum: [Float]) {
@@ -742,6 +792,7 @@ private final class EdgeIndicator {
         timer = nil
         currentState = .hidden
         targetDisplayID = nil
+        processingProgress = 0
         for surface in surfaces {
             surface.view.indicatorState = .hidden
             surface.view.pointerLocation = nil
@@ -868,6 +919,7 @@ private final class EdgeIndicator {
             surface.view.audioLevel = currentAudioLevel
             surface.view.audioProfile = currentAudioProfile
             surface.view.appearanceProgress = appearanceProgress
+            surface.view.processingProgress = processingProgress
             let visiblePulsePhase =
                 currentState == .processing || currentState == .completing
                     ? breathPhase
@@ -1424,7 +1476,7 @@ private final class StatsPopoverViewController: NSViewController {
             }
             modelControl.addItem(
                 withTitle:
-                    "#\(model.benchmarkRank) \(model.shortName) · \(suffix)"
+                    "\(model.shortName) · \(suffix)"
             )
             if let menuItem = modelControl.itemArray.last {
                 menuItem.toolTip = reasonForAvailability(availability)
@@ -1494,7 +1546,7 @@ private protocol TranscriptionBackend {
 }
 
 private final class WhisperCppEngine: TranscriptionBackend {
-    private let queue = DispatchQueue(label: "com.edgewhisper.inference", qos: .userInitiated)
+    private let queue = DispatchQueue(label: "com.joslack.luxit.inference", qos: .userInitiated)
     private var context: UnsafeMutableRawPointer?
     private var unloadWorkItem: DispatchWorkItem?
     private(set) var activeProfile: SelectedTranscriptionProfile?
@@ -1534,8 +1586,14 @@ private final class WhisperCppEngine: TranscriptionBackend {
                 self.isReady = false
             }
 
-            let strategy = profile.whisperCppStrategy?.rawValue ??
-                WhisperCppTranscriptionStrategy.baseline.rawValue
+            guard let strategy = profile.whisperCppStrategy?.rawValue else {
+                DispatchQueue.main.async {
+                    completion(.failure(
+                        ModelSelectionError.unsupportedProfile(profile.rawValue)
+                    ))
+                }
+                return
+            }
             ew_whisper_set_strategy(Int32(strategy))
             let loaded = modelURL.path.withCString { ew_whisper_load($0) }
             guard let loaded else {
@@ -1642,7 +1700,7 @@ private final class WhisperCppEngine: TranscriptionBackend {
 }
 
 private final class ParakeetEngine: TranscriptionBackend {
-    private let queue = DispatchQueue(label: "com.edgewhisper.parakeet", qos: .userInitiated)
+    private let queue = DispatchQueue(label: "com.joslack.luxit.parakeet", qos: .userInitiated)
     private var context: UnsafeMutableRawPointer?
     private var unloadWorkItem: DispatchWorkItem?
     private(set) var activeProfile: SelectedTranscriptionProfile?
@@ -1786,7 +1844,7 @@ private final class ParakeetEngine: TranscriptionBackend {
 }
 
 private final class TranscriptionEngine {
-    private let queue = DispatchQueue(label: "com.edgewhisper.inference", qos: .userInitiated)
+    private let queue = DispatchQueue(label: "com.joslack.luxit.inference", qos: .userInitiated)
     private let whisperEngine = WhisperCppEngine()
     private let parakeetEngine = ParakeetEngine()
     private var activeProfile: SelectedTranscriptionProfile?
@@ -2306,7 +2364,7 @@ private final class AppDelegate:
     private let indicator = EdgeIndicator()
     private let statistics = StatisticsStore()
     private let audioPreparationQueue = DispatchQueue(
-        label: "com.edgewhisper.audio-preparation",
+        label: "com.joslack.luxit.audio-preparation",
         qos: .userInitiated
     )
     private let statusMenu = NSMenu()
@@ -2460,7 +2518,7 @@ private final class AppDelegate:
 
     private func setupStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        statusItem.autosaveName = "com.edgewhisper.statusItem"
+        statusItem.autosaveName = "com.joslack.luxit.statusItem"
         statusItem.isVisible = true
         if let button = statusItem.button {
             button.image = NSImage(
@@ -2654,10 +2712,10 @@ private final class AppDelegate:
 
     private func verifyModel() {
         if selectedModelURL == nil {
-            let fallbackURL = modelURL(for: .whisperCppBaseline)
+            let fallbackURL = modelURL(for: .whisperCppGreedy)
             if let fallbackURL,
                FileManager.default.fileExists(atPath: fallbackURL.path) {
-                selectedModel = .whisperCppBaseline
+                selectedModel = .whisperCppGreedy
                 selectedModel.save()
             }
         }
@@ -2887,7 +2945,7 @@ private final class AppDelegate:
                 },
                 commandExists: commandExists
             )
-            item.title = "#\(model.benchmarkRank) \(model.displayName)"
+            item.title = model.displayName
             item.subtitle =
                 "\(model.warmHint) · \(reasonForAvailability(availability))"
             item.toolTip =

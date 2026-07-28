@@ -160,6 +160,7 @@ benchmark/data/ratings.jsonl append-only manual judgments
 benchmark/sttbench/          generic registry, adapters, runner, API, metrics
 benchmark-ui/                local Next.js interface
 research/                    per-family implementation and model-space reports
+benchmark/results/           privacy-safe aggregate benchmark report
 ```
 
 Primary API routes:

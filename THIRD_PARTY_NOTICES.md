@@ -1,5 +1,14 @@
 # Third-Party Notices
 
+## NVIDIA Parakeet TDT 0.6B v3
+
+Luxit's default speech-to-text model is NVIDIA
+[Parakeet TDT 0.6B v3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3),
+distributed under the
+[Creative Commons Attribution 4.0 International license](https://creativecommons.org/licenses/by/4.0/).
+Luxit installs the Q8_0 GGUF conversion published by
+[ggml-org](https://huggingface.co/ggml-org/parakeet-GGUF).
+
 ## AudioKit
 
 Luxit's live recording spectrum adapts the vDSP FFT implementation pattern

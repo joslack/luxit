@@ -20,7 +20,11 @@ private enum VoiceOrbGeometryTests {
         let repeated = VoiceOrbGeometry.points(spectrum: low, level: 0.8)
         let changed = VoiceOrbGeometry.points(spectrum: high, level: 0.8)
 
-        expect(first.count == 512, "the default cloud should contain 512 points")
+        expect(
+            first.count == VoiceOrbGeometry.defaultPointCount &&
+                first.count == 768,
+            "the denser default cloud should contain 768 points"
+        )
         expect(first == repeated, "the same sound must produce the same cloud")
         expect(first != changed, "different spectra should produce different clouds")
         expect(

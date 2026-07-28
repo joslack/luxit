@@ -26,7 +26,7 @@ A tiny, fully local macOS dictation utility:
   configuration options.
 - The Voice Orb maps 23 logarithmically spaced frequency bands from roughly
   90 Hz to 8 kHz, measured with a Hann-windowed vDSP FFT, into a deterministic
-  512-particle
+  768-particle
   cloud: every frequency owns a stable constellation distributed across all
   quadrants, rather than one contiguous wedge. Live voice energy adds
   smoothly randomized movement whose wide permanent velocity range,
@@ -53,10 +53,12 @@ A tiny, fully local macOS dictation utility:
   high-frequency hiss, while a persistent per-band noise estimate subtracts
   stationary background energy.
 - Press **Caps Lock** again to stop.
-- When the Voice Orb is processing, it preserves the exact rotation, current,
-  particle phases, and motion speed from the recording. A separate coherent
-  inhale–exhale modulation is layered over that continuing flow until
-  transcription completes, then the still-moving field contracts and fades.
+- When recording ends, the Voice Orb preserves the exact rotation, current,
+  particle phases, and motion speed, then eases those live values into a
+  coherent inhale–exhale processing pulse. It remains white through the
+  handoff and only develops a restrained warm tint if processing lasts long
+  enough. When transcription completes, the still-moving field contracts and
+  fades.
 - Press **Caps Lock** again during transcription to begin the next recording
   immediately. Up to three completed recordings are transcribed in order while
   one additional recording is in progress.
@@ -69,11 +71,13 @@ A tiny, fully local macOS dictation utility:
 - The final text is pasted wherever the cursor is with one trailing space, so
   consecutive dictation segments remain separated.
 
-The model picker now shows seven benchmark-ranked profiles. In-app, whisper.cpp
-greedy, whisper.cpp baseline, Parakeet Metal, and Parakeet CPU are active. Other
-entries are shown for benchmark parity, ranked independently of their installed/
-available state. Selecting an entry never starts a download: unavailable engines
-remain disabled with an explicit reason.
+The model picker exposes only three fully wired choices: Parakeet Metal
+(recommended, fastest, and most accurate in the local benchmark), Parakeet CPU
+(the same transcript quality without Metal), and whisper.cpp greedy (the
+strongest wired Whisper fallback). The privacy-safe aggregate measurements and
+the complete seven-backend comparison are published in
+[the benchmark report](benchmark/results/README.md). Selecting an entry never
+starts a download; a local model must already be installed.
 The selected model is loaded lazily on the first Caps Lock press and stays warm for
 consecutive dictations. After ten idle minutes it becomes eligible for unloading, but
 is released only if macOS reports memory pressure. Audio never leaves the Mac, and the
@@ -114,9 +118,10 @@ models, certificates, or private keys are stored in this repository.
 ```
 
 The installer builds the native app, installs it as
-`/Applications/Luxit.app`, downloads the 574 MB q5 model and verified
-885 KB Silero VAD model if necessary, and creates a per-user LaunchAgent so
-Luxit is warm after login.
+`/Applications/Luxit.app`, installs the checksum-verified 638 MiB Parakeet
+Metal Q8 model and 885 KB Silero VAD model if necessary, and creates a per-user
+LaunchAgent so Luxit is warm after login. Fresh installations default to
+Parakeet Metal; optional models are never downloaded merely by selecting them.
 
 For a private local build, run `scripts/create-local-signing-identity.sh` once
 before installing. It creates an app-specific self-signed identity in the login
@@ -147,6 +152,32 @@ checkmark.
 
 If you quit Luxit, reopen it from Applications or Spotlight. It also
 starts automatically the next time you log in.
+
+### Installing on another or work-managed Mac
+
+Luxit uses the bundle identifier `com.joslack.luxit`. macOS grants privacy
+permissions to a particular signed application on a particular Mac, so copying
+an already-built app does not transfer its trust or permissions from another
+computer. The predictable setup is to clone the repository on the destination
+Mac, create a persistent local signing identity there, and then install:
+
+```sh
+./scripts/create-local-signing-identity.sh
+./scripts/install.sh
+```
+
+Approve Microphone, Accessibility, and Input Monitoring for Luxit when prompted.
+If another local dictation app already has those permissions, that is a good
+indication that the Mac's management policy allows this setup, but Luxit still
+needs its own approvals. Corporate device management can disable these controls;
+if they are locked, IT approval or a Developer ID-signed and notarized release
+is required.
+
+Luxit can be installed alongside another Whisper application because it has its
+own bundle identifier. Do not run both dictation apps simultaneously if both
+listen for Caps Lock. The standard installer fetches Parakeet Metal Q8 and
+Silero; other transcription models are not downloaded merely by selecting them
+and must be installed explicitly.
 
 ## Accuracy and vocabulary
 
