@@ -98,7 +98,7 @@ private enum VoiceOrbConfigurationTests {
                     VoiceOrbMotion.cloudUnderlayOpacity(
                         appearance: 1,
                         completion: 0
-                    ) - 0.11
+                    ) - 0.28
                 ) < 0.0001,
             "the contrast atmosphere follows the cloud lifecycle"
         )
@@ -112,15 +112,26 @@ private enum VoiceOrbConfigurationTests {
             appearance: 1,
             completion: 0
         )
+        let outerUnderlayAlpha = VoiceOrbMotion.cloudUnderlayAlpha(
+            normalizedDistance: 0.75,
+            appearance: 1,
+            completion: 0
+        )
+        let fringeUnderlayAlpha = VoiceOrbMotion.cloudUnderlayAlpha(
+            normalizedDistance: 0.9,
+            appearance: 1,
+            completion: 0
+        )
         let edgeUnderlayAlpha = VoiceOrbMotion.cloudUnderlayAlpha(
             normalizedDistance: 1,
             appearance: 1,
             completion: 0
         )
         expect(
-            abs(centerUnderlayAlpha - 0.11) < 0.0001 &&
-                middleUnderlayAlpha > 0 &&
-                middleUnderlayAlpha < centerUnderlayAlpha &&
+            abs(centerUnderlayAlpha - 0.28) < 0.0001 &&
+                abs(middleUnderlayAlpha - 0.201) < 0.002 &&
+                abs(outerUnderlayAlpha - 0.108) < 0.002 &&
+                abs(fringeUnderlayAlpha - 0.042) < 0.002 &&
                 edgeUnderlayAlpha == 0,
             "the contrast atmosphere fades without a visible perimeter"
         )

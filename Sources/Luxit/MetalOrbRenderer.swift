@@ -457,7 +457,7 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
         if (in.isUnderlay > 0.5) {
             float underlayCoverage = pow(
                 max(0.0, 1.0 - distance * distance),
-                1.65
+                1.15
             );
             return half4(
                 half3(in.color.rgb),

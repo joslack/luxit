@@ -329,16 +329,23 @@ private final class EdgeIndicatorView: NSView {
                 (
                     NSColor(
                         calibratedWhite: 0.07,
-                        alpha: underlayOpacity * 0.62
+                        alpha: underlayOpacity * 0.718
                     ),
                     0.5
                 ),
                 (
                     NSColor(
                         calibratedWhite: 0.07,
-                        alpha: underlayOpacity * 0.14
+                        alpha: underlayOpacity * 0.386
                     ),
-                    0.82
+                    0.75
+                ),
+                (
+                    NSColor(
+                        calibratedWhite: 0.07,
+                        alpha: underlayOpacity * 0.149
+                    ),
+                    0.9
                 ),
                 (NSColor.clear, 1)
            ) {

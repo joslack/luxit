@@ -8,7 +8,7 @@ enum VoiceOrbMotion {
     static let voiceResponseScale: CGFloat = 1.65
     static let baseRadius: CGFloat = 70
     static let voiceRadiusGrowth: CGFloat = 15
-    static let cloudUnderlayCenterOpacity: CGFloat = 0.11
+    static let cloudUnderlayCenterOpacity: CGFloat = 0.28
     static let cloudUnderlayRadiusMultiplier: CGFloat = 1.32
 
     static let idleVisualFloor: CGFloat = 0.12
@@ -106,7 +106,7 @@ enum VoiceOrbMotion {
         return cloudUnderlayOpacity(
             appearance: appearance,
             completion: completion
-        ) * pow(1 - distance * distance, 1.65)
+        ) * pow(1 - distance * distance, 1.15)
     }
 
     static func materializationAlpha(
