@@ -18,162 +18,6 @@ private enum EdgeState {
     case error
 }
 
-private enum IndicatorStyle: String, CaseIterable {
-    case ember
-    case equalizer
-    case orb
-
-    private static let defaultsKey = "indicator.style"
-
-    var displayName: String {
-        switch self {
-        case .ember: return "Ember"
-        case .equalizer: return "Equalizer"
-        case .orb: return "Voice Orb"
-        }
-    }
-
-    static var saved: IndicatorStyle {
-        guard let rawValue = UserDefaults.standard.string(forKey: defaultsKey),
-              let style = IndicatorStyle(rawValue: rawValue) else {
-            return .equalizer
-        }
-        return style
-    }
-
-    func save() {
-        UserDefaults.standard.set(rawValue, forKey: Self.defaultsKey)
-    }
-}
-
-private enum IndicatorPlacement: String, CaseIterable {
-    case rightEdge
-    case bottomRight
-    case bottomCenter
-    case bottomLeft
-    case topRight
-    case topLeft
-
-    private static let defaultsKey = "indicator.placement"
-
-    var displayName: String {
-        switch self {
-        case .rightEdge: return "Right Edge"
-        case .bottomRight: return "Bottom Right"
-        case .bottomCenter: return "Bottom Center"
-        case .bottomLeft: return "Bottom Left"
-        case .topRight: return "Top Right"
-        case .topLeft: return "Top Left"
-        }
-    }
-
-    static var saved: IndicatorPlacement {
-        guard
-            let rawValue = UserDefaults.standard.string(forKey: defaultsKey),
-            let placement = IndicatorPlacement(rawValue: rawValue)
-        else {
-            return .rightEdge
-        }
-        return placement
-    }
-
-    func save() {
-        UserDefaults.standard.set(rawValue, forKey: Self.defaultsKey)
-    }
-}
-
-private enum IndicatorColor: String, CaseIterable {
-    case white
-    case coral
-    case cyan
-    case violet
-
-    private static let defaultsKey = "indicator.color"
-
-    var displayName: String {
-        switch self {
-        case .white: return "White"
-        case .coral: return "Coral"
-        case .cyan: return "Cyan"
-        case .violet: return "Violet"
-        }
-    }
-
-    var accent: NSColor {
-        switch self {
-        case .white:
-            return NSColor(
-                calibratedWhite: 1.0,
-                alpha: 1
-            )
-        case .coral:
-            return NSColor(
-                calibratedRed: 1.0,
-                green: 0.16,
-                blue: 0.22,
-                alpha: 1
-            )
-        case .cyan:
-            return NSColor(
-                calibratedRed: 0.08,
-                green: 0.78,
-                blue: 1.0,
-                alpha: 1
-            )
-        case .violet:
-            return NSColor(
-                calibratedRed: 0.66,
-                green: 0.30,
-                blue: 1.0,
-                alpha: 1
-            )
-        }
-    }
-
-    var highlight: NSColor {
-        switch self {
-        case .white:
-            return NSColor(
-                calibratedWhite: 1.0,
-                alpha: 1
-            )
-        case .coral:
-            return NSColor(
-                calibratedRed: 1.0,
-                green: 0.80,
-                blue: 0.72,
-                alpha: 1
-            )
-        case .cyan:
-            return NSColor(
-                calibratedRed: 0.72,
-                green: 0.96,
-                blue: 1.0,
-                alpha: 1
-            )
-        case .violet:
-            return NSColor(
-                calibratedRed: 0.91,
-                green: 0.78,
-                blue: 1.0,
-                alpha: 1
-            )
-        }
-    }
-
-    static var saved: IndicatorColor {
-        guard let rawValue = UserDefaults.standard.string(forKey: defaultsKey),
-              let color = IndicatorColor(rawValue: rawValue) else {
-            return .white
-        }
-        return color
-    }
-
-    func save() {
-        UserDefaults.standard.set(rawValue, forKey: Self.defaultsKey)
-    }
-}
-
 private typealias SelectedTranscriptionProfile = TranscriptionModelProfile
 
 enum DiagnosticLog {
@@ -242,12 +86,6 @@ private func reasonForAvailability(_ availability: ModelAvailability) -> String 
 }
 
 private final class EdgeIndicatorView: NSView {
-    var indicatorStyle: IndicatorStyle = .ember {
-        didSet { refreshVisuals() }
-    }
-    var indicatorColor: IndicatorColor = .white {
-        didSet { refreshVisuals() }
-    }
     var indicatorState: EdgeState = .hidden {
         didSet { refreshVisuals() }
     }
@@ -273,9 +111,6 @@ private final class EdgeIndicatorView: NSView {
         didSet { refreshVisuals() }
     }
     var appearanceProgress: CGFloat = 0 {
-        didSet { refreshVisuals() }
-    }
-    var orbDynamics: OrbDynamicsPreset = .turbulent {
         didSet { refreshVisuals() }
     }
 
@@ -304,59 +139,20 @@ private final class EdgeIndicatorView: NSView {
         NSColor.clear.setFill()
         dirtyRect.fill()
         guard indicatorState != .hidden else { return }
+        guard metalOrbRenderer == nil else { return }
 
         switch indicatorState {
         case .recording:
-            switch indicatorStyle {
-            case .ember:
-                drawEmber()
-            case .equalizer:
-                drawEqualizer()
-            case .orb:
-                if metalOrbRenderer == nil {
-                    drawVoiceOrb()
-                }
-            }
+            drawVoiceOrb()
         case .processing:
-            switch indicatorStyle {
-            case .ember:
-                drawStatusEmber(
-                    color: processingColor,
-                    height: 44 + pulse * 18,
-                    width: 4 + pulse * 2
-                )
-            case .equalizer:
-                drawProcessingEqualizer()
-            case .orb:
-                if metalOrbRenderer == nil {
-                    drawVoiceOrb(processing: true)
-                }
-            }
+            drawVoiceOrb(processing: true)
         case .completing:
-            switch indicatorStyle {
-            case .ember:
-                drawCompletingEmber()
-            case .equalizer:
-                drawCompletingEqualizer()
-            case .orb:
-                if metalOrbRenderer == nil {
-                    drawVoiceOrb(
-                        processing: true,
-                        completion: completionProgress
-                    )
-                }
-            }
-        case .error:
-            drawStatusEmber(
-                color: NSColor(
-                    calibratedRed: 1.0,
-                    green: 0.08,
-                    blue: 0.42,
-                    alpha: 1
-                ),
-                height: 78,
-                width: 7
+            drawVoiceOrb(
+                processing: true,
+                completion: completionProgress
             )
+        case .error:
+            drawVoiceOrb(processing: true)
         case .hidden:
             return
         }
@@ -384,27 +180,12 @@ private final class EdgeIndicatorView: NSView {
     }
 
     private func syncMetalOrb() {
-        let usesMetalOrb =
-            indicatorStyle == .orb &&
-            (
-                indicatorState == .recording ||
-                indicatorState == .processing ||
-                indicatorState == .completing
-            )
+        let usesMetalOrb = indicatorState != .hidden
         metalOrbView?.isHidden = !usesMetalOrb
         guard usesMetalOrb, let metalOrbRenderer else { return }
         let processing =
-            indicatorState == .processing ||
-            indicatorState == .completing
-        let accent = processing ? processingColor : indicatorColor.accent
-        let highlight = processing
-            ? NSColor(
-                calibratedRed: 1,
-                green: 0.87,
-                blue: 0.52,
-                alpha: 1
-            )
-            : indicatorColor.highlight
+            indicatorState != .recording
+        let (accent, highlight) = orbColors
         metalOrbRenderer.update(
             spectrum: audioProfile,
             level: audioLevel,
@@ -414,115 +195,11 @@ private final class EdgeIndicatorView: NSView {
             processing: processing,
             completion: completionProgress,
             appearance: appearanceProgress,
-            dynamics: orbDynamics,
             pointer: pointerLocation,
             accent: accent,
             highlight: highlight,
             bounds: bounds
         )
-    }
-
-    private func drawEmber() {
-        let color = indicatorColor.accent
-        let voice = max(0, min(1, audioLevel))
-        let height = 66 + voice * 72
-        let width = 4.5 + voice * 3
-        let y = bounds.midY - height / 2
-
-        let outerGlow = NSRect(
-            x: bounds.maxX - 22,
-            y: y - 16,
-            width: 22,
-            height: height + 32
-        )
-        color.withAlphaComponent(0.08 + voice * 0.08).setFill()
-        NSBezierPath(
-            roundedRect: outerGlow,
-            xRadius: 12,
-            yRadius: 24
-        ).fill()
-
-        let innerGlow = NSRect(
-            x: bounds.maxX - 12,
-            y: y - 7,
-            width: 12,
-            height: height + 14
-        )
-        color.withAlphaComponent(0.22 + voice * 0.15).setFill()
-        NSBezierPath(
-            roundedRect: innerGlow,
-            xRadius: 7,
-            yRadius: 14
-        ).fill()
-
-        let coreRect = NSRect(
-            x: bounds.maxX - width,
-            y: y,
-            width: width,
-            height: height
-        )
-        let corePath = NSBezierPath(
-            roundedRect: coreRect,
-            xRadius: width / 2,
-            yRadius: width / 2
-        )
-        let gradient = NSGradient(colorsAndLocations:
-            (color.withAlphaComponent(0.18), 0.0),
-            (color.withAlphaComponent(0.92), 0.32),
-            (
-                indicatorColor.highlight,
-                0.5
-            ),
-            (color.withAlphaComponent(0.92), 0.68),
-            (color.withAlphaComponent(0.18), 1.0)
-        )
-        gradient?.draw(in: corePath, angle: 90)
-    }
-
-    private func drawEqualizer() {
-        let color = indicatorColor.accent
-        let count = 23
-        let tickHeight: CGFloat = 5
-        let spacing: CGFloat = 9
-        let totalHeight = CGFloat(count - 1) * spacing + tickHeight
-        let startY = bounds.midY - totalHeight / 2
-        let voice = max(0, min(1, audioLevel))
-
-        for index in 0..<count {
-            // The bars are a measured spectrum, ordered low-to-high from the
-            // bottom of the screen. No time-based oscillator is mixed in.
-            let measured = audioProfile.indices.contains(index)
-                ? max(0, min(1, audioProfile[index]))
-                : 0
-            let width = 5 + measured * 55
-            let y = startY + CGFloat(index) * spacing
-
-            let glowRect = NSRect(
-                x: bounds.maxX - width - 8,
-                y: y - 4,
-                width: width + 8,
-                height: tickHeight + 8
-            )
-            color.withAlphaComponent(0.08 + measured * 0.20).setFill()
-            NSBezierPath(
-                roundedRect: glowRect,
-                xRadius: 5,
-                yRadius: 5
-            ).fill()
-
-            let tickRect = NSRect(
-                x: bounds.maxX - width,
-                y: y,
-                width: width,
-                height: tickHeight
-            )
-            color.withAlphaComponent(0.54 + voice * 0.16 + measured * 0.30).setFill()
-            NSBezierPath(
-                roundedRect: tickRect,
-                xRadius: tickHeight / 2,
-                yRadius: tickHeight / 2
-            ).fill()
-        }
     }
 
     private var processingColor: NSColor {
@@ -534,120 +211,35 @@ private final class EdgeIndicatorView: NSView {
         )
     }
 
-    private func drawProcessingEqualizer() {
-        let color = processingColor
-        let count = 23
-        let tickHeight: CGFloat = 5
-        let spacing: CGFloat = 9
-        let totalHeight = CGFloat(count - 1) * spacing + tickHeight
-        let startY = bounds.midY - totalHeight / 2
-        let travelingCenter = (
-            animationPhase * 5
-        ).truncatingRemainder(dividingBy: CGFloat(count + 10)) - 5
-
-        for index in 0..<count {
-            let centerDistance = abs(
-                CGFloat(index) - CGFloat(count - 1) / 2
-            ) / (CGFloat(count - 1) / 2)
-            let silhouette = pow(max(0, 1 - centerDistance), 0.68)
-            let pulseDistance = abs(CGFloat(index) - travelingCenter)
-            let travelingPulse = exp(-pulseDistance * 0.52)
-            let width = 6 + silhouette * 10 + travelingPulse * 33
-            let y = startY + CGFloat(index) * spacing
-
-            let glowRect = NSRect(
-                x: bounds.maxX - width - 8,
-                y: y - 4,
-                width: width + 8,
-                height: tickHeight + 8
+    private var orbColors: (accent: NSColor, highlight: NSColor) {
+        switch indicatorState {
+        case .processing, .completing:
+            return (
+                processingColor,
+                NSColor(
+                    calibratedRed: 1,
+                    green: 0.87,
+                    blue: 0.52,
+                    alpha: 1
+                )
             )
-            color.withAlphaComponent(0.11 + travelingPulse * 0.18).setFill()
-            NSBezierPath(
-                roundedRect: glowRect,
-                xRadius: 5,
-                yRadius: 5
-            ).fill()
-
-            let tickRect = NSRect(
-                x: bounds.maxX - width,
-                y: y,
-                width: width,
-                height: tickHeight
+        case .error:
+            return (
+                NSColor(
+                    calibratedRed: 1,
+                    green: 0.08,
+                    blue: 0.42,
+                    alpha: 1
+                ),
+                NSColor(
+                    calibratedRed: 1,
+                    green: 0.72,
+                    blue: 0.82,
+                    alpha: 1
+                )
             )
-            color.withAlphaComponent(
-                0.62 + silhouette * 0.18 + travelingPulse * 0.20
-            ).setFill()
-            NSBezierPath(
-                roundedRect: tickRect,
-                xRadius: tickHeight / 2,
-                yRadius: tickHeight / 2
-            ).fill()
-        }
-    }
-
-    private func drawCompletingEqualizer() {
-        let color = processingColor
-        let count = 23
-        let tickHeight: CGFloat = 5
-        let spacing: CGFloat = 9
-        let totalHeight = CGFloat(count - 1) * spacing + tickHeight
-        let startY = bounds.midY - totalHeight / 2
-        let progress = max(0, min(1, completionProgress))
-        let travelingCenter = (
-            animationPhase * 5
-        ).truncatingRemainder(dividingBy: CGFloat(count + 10)) - 5
-
-        for index in 0..<count {
-            let centerDistance = abs(
-                CGFloat(index) - CGFloat(count - 1) / 2
-            ) / (CGFloat(count - 1) / 2)
-            let silhouette = pow(max(0, 1 - centerDistance), 0.68)
-            let pulseDistance = abs(CGFloat(index) - travelingCenter)
-            let travelingPulse = exp(-pulseDistance * 0.52)
-            let originalWidth = 6 + silhouette * 10 + travelingPulse * 33
-
-            // Each bar resolves toward the screen edge a fraction after the
-            // one above it, making the waveform visibly fall away instead of
-            // being replaced by a hard cut.
-            let stagger = CGFloat(index) / CGFloat(count - 1) * 0.34
-            let localProgress = max(
-                0,
-                min(1, (progress - stagger) / (1 - 0.34))
-            )
-            let eased = 1 - pow(1 - localProgress, 3)
-            let width = max(0.4, originalWidth * (1 - eased))
-            let alpha = pow(1 - localProgress, 1.35)
-            let y = startY + CGFloat(index) * spacing
-
-            let glowRect = NSRect(
-                x: bounds.maxX - width - 8 * alpha,
-                y: y - 4 * alpha,
-                width: width + 8 * alpha,
-                height: tickHeight + 8 * alpha
-            )
-            color.withAlphaComponent(
-                (0.11 + travelingPulse * 0.18) * alpha
-            ).setFill()
-            NSBezierPath(
-                roundedRect: glowRect,
-                xRadius: 5,
-                yRadius: 5
-            ).fill()
-
-            let tickRect = NSRect(
-                x: bounds.maxX - width,
-                y: y,
-                width: width,
-                height: tickHeight
-            )
-            color.withAlphaComponent(
-                (0.62 + silhouette * 0.18 + travelingPulse * 0.20) * alpha
-            ).setFill()
-            NSBezierPath(
-                roundedRect: tickRect,
-                xRadius: min(tickHeight / 2, width / 2),
-                yRadius: min(tickHeight / 2, width / 2)
-            ).fill()
+        case .recording, .hidden:
+            return (.white, .white)
         }
     }
 
@@ -679,15 +271,7 @@ private final class EdgeIndicatorView: NSView {
         // Processing preserves the recording flow phase while a separate
         // radius modulation adds the unified breathing signal.
         let rotation = animationPhase * 0.11
-        let color = processing ? processingColor : indicatorColor.accent
-        let highlight = processing
-            ? NSColor(
-                calibratedRed: 1,
-                green: 0.87,
-                blue: 0.52,
-                alpha: 1
-            )
-            : indicatorColor.highlight
+        let (color, highlight) = orbColors
         let cosine = cos(rotation)
         let sine = sin(rotation)
         for (index, point) in points.enumerated() {
@@ -703,19 +287,19 @@ private final class EdgeIndicatorView: NSView {
                     0.55 +
                     displayLevel *
                         4.20 *
-                        orbDynamics.voiceResponseScale
+                        VoiceOrbMotion.voiceResponseScale
                 ) *
                 (0.42 + point.intensity * 0.58) *
                 point.driftScale *
-                orbDynamics.jitterScale
+                VoiceOrbMotion.jitterScale
             let flowAmount = (
                 2.20 +
                 displayLevel *
                     point.intensity *
                     4.80 *
-                    orbDynamics.voiceResponseScale
-            ) * point.driftScale * orbDynamics.currentScale
-            let spatialScale = orbDynamics.spatialScale
+                    VoiceOrbMotion.voiceResponseScale
+            ) * point.driftScale * VoiceOrbMotion.currentScale
+            let spatialScale = VoiceOrbMotion.spatialScale
             let flowX =
                 (
                     sin(
@@ -743,10 +327,9 @@ private final class EdgeIndicatorView: NSView {
                     2.6 +
                     displayLevel *
                         8.5 *
-                        orbDynamics.voiceResponseScale
+                        VoiceOrbMotion.voiceResponseScale
                 ) *
-                point.driftScale *
-                orbDynamics.attractorBlend
+                point.driftScale
             let attractorX =
                 (
                     sin(rotatedY * 1.7 + particleTimeX) +
@@ -840,18 +423,6 @@ private final class EdgeIndicatorView: NSView {
         }
     }
 
-    private func drawCompletingEmber() {
-        let progress = max(0, min(1, completionProgress))
-        let eased = 1 - pow(1 - progress, 3)
-        drawStatusEmber(
-            color: processingColor.withAlphaComponent(
-                pow(1 - progress, 1.4)
-            ),
-            height: max(1, (44 + pulse * 18) * (1 - eased)),
-            width: max(0.5, (4 + pulse * 2) * (1 - eased))
-        )
-    }
-
     private func smoothstep(
         _ lower: CGFloat,
         _ upper: CGFloat,
@@ -860,39 +431,6 @@ private final class EdgeIndicatorView: NSView {
         guard upper > lower else { return value >= upper ? 1 : 0 }
         let normalized = max(0, min(1, (value - lower) / (upper - lower)))
         return normalized * normalized * (3 - 2 * normalized)
-    }
-
-    private func drawStatusEmber(
-        color: NSColor,
-        height: CGFloat,
-        width: CGFloat
-    ) {
-        let y = bounds.midY - height / 2
-        let glowRect = NSRect(
-            x: bounds.maxX - 16,
-            y: y - 10,
-            width: 16,
-            height: height + 20
-        )
-        color.withAlphaComponent(0.12 + 0.08 * pulse).setFill()
-        NSBezierPath(
-            roundedRect: glowRect,
-            xRadius: 9,
-            yRadius: 16
-        ).fill()
-
-        let coreRect = NSRect(
-            x: bounds.maxX - width,
-            y: y,
-            width: width,
-            height: height
-        )
-        color.setFill()
-        NSBezierPath(
-            roundedRect: coreRect,
-            xRadius: width / 2,
-            yRadius: width / 2
-        ).fill()
     }
 }
 
@@ -916,10 +454,6 @@ private final class EdgeIndicator {
     private var appearanceProgress: CGFloat = 0
     private let voiceAnimationFilter = VoiceAnimationFilter()
     private var targetDisplayID: NSNumber?
-    private(set) var style: IndicatorStyle = .saved
-    private(set) var color: IndicatorColor = .saved
-    private(set) var placement: IndicatorPlacement = .saved
-    private(set) var dynamics: OrbDynamicsPreset = .saved
 
     init() {
         rebuildPanels()
@@ -949,6 +483,8 @@ private final class EdgeIndicator {
             // Preserve the exact flow phase from recording and begin a
             // separate breathing cycle at the bottom of an inhale.
             breathPhase = -.pi / 2
+        } else if state == .error {
+            appearanceProgress = 1
         } else if targetDisplayID == nil {
             targetDisplayID = resolveTargetDisplay().displayID
         }
@@ -976,15 +512,15 @@ private final class EdgeIndicator {
                 self.orbMotionPhase +=
                     elapsed *
                     self.orbMotionSpeed *
-                    self.dynamics.speedScale
+                    VoiceOrbMotion.speedScale
                 let flowSpeed =
                     1.55 +
                     (
                         self.currentAudioLevel * 2.40 +
                         min(2.00, self.orbMotionSpeed * 0.15)
-                    ) * self.dynamics.voiceResponseScale
+                    ) * VoiceOrbMotion.voiceResponseScale
                 self.phase +=
-                    elapsed * flowSpeed * self.dynamics.speedScale
+                    elapsed * flowSpeed * VoiceOrbMotion.speedScale
                 for surface in self.surfaces {
                     surface.view.orbMotionPhase = self.orbMotionPhase
                     surface.view.animationPhase = self.phase
@@ -1017,15 +553,15 @@ private final class EdgeIndicator {
                 self.orbMotionPhase +=
                     elapsed *
                     self.orbMotionSpeed *
-                    self.dynamics.speedScale
+                    VoiceOrbMotion.speedScale
                 let flowSpeed =
                     1.55 +
                     (
                         self.currentAudioLevel * 2.40 +
                         min(2.00, self.orbMotionSpeed * 0.15)
-                    ) * self.dynamics.voiceResponseScale
+                    ) * VoiceOrbMotion.voiceResponseScale
                 self.phase +=
-                    elapsed * flowSpeed * self.dynamics.speedScale
+                    elapsed * flowSpeed * VoiceOrbMotion.speedScale
                 let pulse = (sin(self.breathPhase) + 1) / 2
                 for surface in self.surfaces {
                     surface.view.pulse = pulse
@@ -1098,15 +634,15 @@ private final class EdgeIndicator {
             self.orbMotionPhase +=
                 frameElapsed *
                 self.orbMotionSpeed *
-                self.dynamics.speedScale
+                VoiceOrbMotion.speedScale
             let flowSpeed =
                 1.55 +
                 (
                     self.currentAudioLevel * 2.40 +
                     min(2.00, self.orbMotionSpeed * 0.15)
-                ) * self.dynamics.voiceResponseScale
+                ) * VoiceOrbMotion.voiceResponseScale
             self.phase +=
-                frameElapsed * flowSpeed * self.dynamics.speedScale
+                frameElapsed * flowSpeed * VoiceOrbMotion.speedScale
             let pulse = (sin(self.breathPhase) + 1) / 2
             let elapsed = now - startedAt
             let progress = min(1, CGFloat(elapsed / duration))
@@ -1201,46 +737,6 @@ private final class EdgeIndicator {
         }
     }
 
-    func setStyle(_ style: IndicatorStyle) {
-        self.style = style
-        style.save()
-        layoutPanels()
-        for surface in surfaces {
-            surface.view.indicatorStyle = style
-        }
-        DiagnosticLog.write("Indicator style changed to \(style.rawValue)")
-    }
-
-    func setColor(_ color: IndicatorColor) {
-        self.color = color
-        color.save()
-        for surface in surfaces {
-            surface.view.indicatorColor = color
-        }
-        DiagnosticLog.write("Indicator color changed to \(color.rawValue)")
-    }
-
-    func setPlacement(_ placement: IndicatorPlacement) {
-        self.placement = placement
-        placement.save()
-        layoutPanels()
-        updatePointerDissipation()
-        DiagnosticLog.write(
-            "Indicator placement changed to \(placement.rawValue)"
-        )
-    }
-
-    func setDynamics(_ dynamics: OrbDynamicsPreset) {
-        self.dynamics = dynamics
-        dynamics.save()
-        for surface in surfaces {
-            surface.view.orbDynamics = dynamics
-        }
-        DiagnosticLog.write(
-            "Orb dynamics changed to \(dynamics.rawValue)"
-        )
-    }
-
     func hide() {
         timer?.invalidate()
         timer = nil
@@ -1281,15 +777,12 @@ private final class EdgeIndicator {
             return nil
         }
         let panel = NSPanel(
-            contentRect: NSRect(origin: .zero, size: panelSize),
+            contentRect: NSRect(origin: .zero, size: VoiceOrbLayout.size),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
         let indicatorView = EdgeIndicatorView(frame: .zero)
-        indicatorView.indicatorStyle = style
-        indicatorView.indicatorColor = color
-        indicatorView.orbDynamics = dynamics
         panel.level = .screenSaver
         panel.backgroundColor = .clear
         panel.isOpaque = false
@@ -1310,15 +803,6 @@ private final class EdgeIndicator {
         return Surface(displayID: displayID, panel: panel, view: indicatorView)
     }
 
-    private var panelSize: NSSize {
-        switch style {
-        case .orb:
-            return NSSize(width: 220, height: 220)
-        case .ember, .equalizer:
-            return NSSize(width: 66, height: 250)
-        }
-    }
-
     private var animationInterval: TimeInterval {
         let display = targetDisplayID.flatMap(screen(for:))
         let framesPerSecond = max(
@@ -1329,51 +813,7 @@ private final class EdgeIndicator {
     }
 
     private func panelFrame(on screen: NSScreen) -> NSRect {
-        let size = panelSize
-        let frame = screen.frame
-        let visible = screen.visibleFrame
-        let inset: CGFloat = 18
-        let origin: NSPoint
-        switch placement {
-        case .rightEdge:
-            origin = NSPoint(
-                x: frame.maxX - size.width,
-                y: frame.midY - size.height / 2
-            )
-        case .bottomRight:
-            origin = NSPoint(
-                x: visible.maxX - size.width - inset,
-                y: visible.minY + inset
-            )
-        case .bottomCenter:
-            origin = NSPoint(
-                x: visible.midX - size.width / 2,
-                y: visible.minY + inset
-            )
-        case .bottomLeft:
-            origin = NSPoint(
-                x: visible.minX + inset,
-                y: visible.minY + inset
-            )
-        case .topRight:
-            origin = NSPoint(
-                x: visible.maxX - size.width - inset,
-                y: visible.maxY - size.height - inset
-            )
-        case .topLeft:
-            origin = NSPoint(
-                x: visible.minX + inset,
-                y: visible.maxY - size.height - inset
-            )
-        }
-        return NSRect(origin: origin, size: size)
-    }
-
-    private func layoutPanels() {
-        for surface in surfaces {
-            guard let screen = screen(for: surface.displayID) else { continue }
-            surface.panel.setFrame(panelFrame(on: screen), display: true)
-        }
+        VoiceOrbLayout.frame(in: screen.visibleFrame)
     }
 
     private func screen(for displayID: NSNumber) -> NSScreen? {
@@ -1388,7 +828,6 @@ private final class EdgeIndicator {
         let mouse = NSEvent.mouseLocation
         for surface in surfaces {
             guard
-                style == .orb,
                 surface.displayID == targetDisplayID,
                 surface.panel.isVisible,
                 surface.panel.frame.insetBy(dx: -32, dy: -32).contains(mouse)
@@ -1426,9 +865,6 @@ private final class EdgeIndicator {
                 continue
             }
             surface.view.indicatorState = currentState
-            surface.view.indicatorStyle = style
-            surface.view.indicatorColor = color
-            surface.view.orbDynamics = dynamics
             surface.view.audioLevel = currentAudioLevel
             surface.view.audioProfile = currentAudioProfile
             surface.view.appearanceProgress = appearanceProgress
@@ -1805,31 +1241,17 @@ private final class StatsPopoverViewController: NSViewController {
     private let performanceValue = NSTextField(labelWithString: "—")
     private let permissionsValue = NSTextField(labelWithString: "Checking permissions…")
     private let modelControl = NSPopUpButton(frame: .zero, pullsDown: false)
-    private lazy var indicatorStyleControl = NSSegmentedControl(
-        labels: IndicatorStyle.allCases.map(\.displayName),
-        trackingMode: .selectOne,
-        target: self,
-        action: #selector(changeIndicatorStyle)
-    )
-    private lazy var indicatorColorControl = NSSegmentedControl(
-        labels: IndicatorColor.allCases.map(\.displayName),
-        trackingMode: .selectOne,
-        target: self,
-        action: #selector(changeIndicatorColor)
-    )
 
     var onPermissions: (() -> Void)?
     var onVocabulary: (() -> Void)?
     var onShowInApplications: (() -> Void)?
     var onModel: ((SelectedTranscriptionProfile) -> Void)?
-    var onIndicatorStyle: ((IndicatorStyle) -> Void)?
-    var onIndicatorColor: ((IndicatorColor) -> Void)?
     var onRestart: (() -> Void)?
     var onQuit: (() -> Void)?
 
     override func loadView() {
         let background = NSVisualEffectView(
-            frame: NSRect(x: 0, y: 0, width: 350, height: 458)
+            frame: NSRect(x: 0, y: 0, width: 350, height: 390)
         )
         background.material = .menu
         background.blendingMode = .behindWindow
@@ -1898,32 +1320,6 @@ private final class StatsPopoverViewController: NSViewController {
         modelRow.distribution = .fill
         modelRow.spacing = 12
 
-        let indicatorLabel = NSTextField(labelWithString: "Recording indicator")
-        indicatorLabel.font = .systemFont(ofSize: 12)
-        indicatorLabel.textColor = .secondaryLabelColor
-        indicatorStyleControl.segmentStyle = .rounded
-        let indicatorRow = NSStackView(views: [
-            indicatorLabel,
-            indicatorStyleControl
-        ])
-        indicatorRow.orientation = .horizontal
-        indicatorRow.alignment = .centerY
-        indicatorRow.distribution = .fill
-        indicatorRow.spacing = 12
-
-        let colorLabel = NSTextField(labelWithString: "Indicator color")
-        colorLabel.font = .systemFont(ofSize: 12)
-        colorLabel.textColor = .secondaryLabelColor
-        indicatorColorControl.segmentStyle = .rounded
-        let colorRow = NSStackView(views: [
-            colorLabel,
-            indicatorColorControl
-        ])
-        colorRow.orientation = .horizontal
-        colorRow.alignment = .centerY
-        colorRow.distribution = .fill
-        colorRow.spacing = 12
-
         let permissionsButton = makeButton(
             "Permissions",
             symbol: "hand.raised",
@@ -1965,8 +1361,6 @@ private final class StatsPopoverViewController: NSViewController {
             grid,
             separator(),
             modelRow,
-            indicatorRow,
-            colorRow,
             permissionsValue,
             settingsRow,
             appRow
@@ -1985,8 +1379,6 @@ private final class StatsPopoverViewController: NSViewController {
             header.widthAnchor.constraint(equalTo: content.widthAnchor),
             grid.widthAnchor.constraint(equalTo: content.widthAnchor),
             modelRow.widthAnchor.constraint(equalTo: content.widthAnchor),
-            indicatorRow.widthAnchor.constraint(equalTo: content.widthAnchor),
-            colorRow.widthAnchor.constraint(equalTo: content.widthAnchor),
             permissionsValue.widthAnchor.constraint(equalTo: content.widthAnchor),
             settingsRow.widthAnchor.constraint(equalTo: content.widthAnchor),
             appRow.widthAnchor.constraint(equalTo: content.widthAnchor)
@@ -2001,9 +1393,7 @@ private final class StatsPopoverViewController: NSViewController {
         microphone: Bool,
         whisperModel: SelectedTranscriptionProfile,
         modelAvailabilities: [SelectedTranscriptionProfile: ModelAvailability],
-        modelSelectionEnabled: Bool,
-        indicatorStyle: IndicatorStyle,
-        indicatorColor: IndicatorColor
+        modelSelectionEnabled: Bool
     ) {
         statusLabel.stringValue = status
         hoursValue.stringValue = String(format: "%.2f h", statistics.audioSeconds / 3600)
@@ -2048,12 +1438,6 @@ private final class StatsPopoverViewController: NSViewController {
             at: SelectedTranscriptionProfile.rankedProfiles.firstIndex(of: whisperModel) ?? 0
         )
         modelControl.isEnabled = modelSelectionEnabled
-        indicatorStyleControl.selectedSegment = IndicatorStyle.allCases.firstIndex(
-            of: indicatorStyle
-        ) ?? 0
-        indicatorColorControl.selectedSegment = IndicatorColor.allCases.firstIndex(
-            of: indicatorColor
-        ) ?? 0
     }
 
     private func metricRow(label: String, value: NSTextField) -> [NSView] {
@@ -2087,16 +1471,6 @@ private final class StatsPopoverViewController: NSViewController {
         let index = modelControl.indexOfSelectedItem
         guard SelectedTranscriptionProfile.rankedProfiles.indices.contains(index) else { return }
         onModel?(SelectedTranscriptionProfile.rankedProfiles[index])
-    }
-    @objc private func changeIndicatorStyle() {
-        let index = indicatorStyleControl.selectedSegment
-        guard IndicatorStyle.allCases.indices.contains(index) else { return }
-        onIndicatorStyle?(IndicatorStyle.allCases[index])
-    }
-    @objc private func changeIndicatorColor() {
-        let index = indicatorColorControl.selectedSegment
-        guard IndicatorColor.allCases.indices.contains(index) else { return }
-        onIndicatorColor?(IndicatorColor.allCases[index])
     }
     @objc private func restart() { onRestart?() }
     @objc private func quit() { onQuit?() }
@@ -2941,20 +2315,8 @@ private final class AppDelegate:
     private let usagePerformanceItem = NSMenuItem()
     private let modelRootItem = NSMenuItem()
     private let modelMenu = NSMenu()
-    private let indicatorRootItem = NSMenuItem()
-    private let indicatorMenu = NSMenu()
-    private let colorRootItem = NSMenuItem()
-    private let colorMenu = NSMenu()
-    private let placementRootItem = NSMenuItem()
-    private let placementMenu = NSMenu()
-    private let dynamicsRootItem = NSMenuItem()
-    private let dynamicsMenu = NSMenu()
     private let permissionsItem = NSMenuItem()
     private var modelMenuItems: [SelectedTranscriptionProfile: NSMenuItem] = [:]
-    private var indicatorMenuItems: [IndicatorStyle: NSMenuItem] = [:]
-    private var colorMenuItems: [IndicatorColor: NSMenuItem] = [:]
-    private var placementMenuItems: [IndicatorPlacement: NSMenuItem] = [:]
-    private var dynamicsMenuItems: [OrbDynamicsPreset: NSMenuItem] = [:]
     private var state: DictationState = .idle
     private var pendingTranscriptions = 0
     private var nextJobID = 1
@@ -3145,63 +2507,6 @@ private final class AppDelegate:
             modelMenuItems[model] = item
         }
 
-        indicatorRootItem.submenu = indicatorMenu
-        statusMenu.addItem(indicatorRootItem)
-        for style in IndicatorStyle.allCases {
-            let item = NSMenuItem(
-                title: style.displayName,
-                action: #selector(selectIndicatorMenuItem(_:)),
-                keyEquivalent: ""
-            )
-            item.target = self
-            item.representedObject = style.rawValue
-            indicatorMenu.addItem(item)
-            indicatorMenuItems[style] = item
-        }
-
-        colorRootItem.submenu = colorMenu
-        statusMenu.addItem(colorRootItem)
-        for color in IndicatorColor.allCases {
-            let item = NSMenuItem(
-                title: color.displayName,
-                action: #selector(selectColorMenuItem(_:)),
-                keyEquivalent: ""
-            )
-            item.target = self
-            item.representedObject = color.rawValue
-            colorMenu.addItem(item)
-            colorMenuItems[color] = item
-        }
-
-        placementRootItem.submenu = placementMenu
-        statusMenu.addItem(placementRootItem)
-        for placement in IndicatorPlacement.allCases {
-            let item = NSMenuItem(
-                title: placement.displayName,
-                action: #selector(selectPlacementMenuItem(_:)),
-                keyEquivalent: ""
-            )
-            item.target = self
-            item.representedObject = placement.rawValue
-            placementMenu.addItem(item)
-            placementMenuItems[placement] = item
-        }
-
-        dynamicsRootItem.submenu = dynamicsMenu
-        statusMenu.addItem(dynamicsRootItem)
-        for dynamics in OrbDynamicsPreset.allCases {
-            let item = NSMenuItem(
-                title: dynamics.displayName,
-                action: #selector(selectDynamicsMenuItem(_:)),
-                keyEquivalent: ""
-            )
-            item.subtitle = dynamics.detail
-            item.target = self
-            item.representedObject = dynamics.rawValue
-            dynamicsMenu.addItem(item)
-            dynamicsMenuItems[dynamics] = item
-        }
-
         statusMenu.addItem(.separator())
 
         permissionsItem.title = "Permissions"
@@ -3259,42 +2564,6 @@ private final class AppDelegate:
             let model = SelectedTranscriptionProfile(rawValue: rawValue)
         else { return }
         selectModel(model)
-    }
-
-    @objc private func selectIndicatorMenuItem(_ sender: NSMenuItem) {
-        guard
-            let rawValue = sender.representedObject as? String,
-            let style = IndicatorStyle(rawValue: rawValue)
-        else { return }
-        indicator.setStyle(style)
-        refreshStatusMenu()
-    }
-
-    @objc private func selectColorMenuItem(_ sender: NSMenuItem) {
-        guard
-            let rawValue = sender.representedObject as? String,
-            let color = IndicatorColor(rawValue: rawValue)
-        else { return }
-        indicator.setColor(color)
-        refreshStatusMenu()
-    }
-
-    @objc private func selectPlacementMenuItem(_ sender: NSMenuItem) {
-        guard
-            let rawValue = sender.representedObject as? String,
-            let placement = IndicatorPlacement(rawValue: rawValue)
-        else { return }
-        indicator.setPlacement(placement)
-        refreshStatusMenu()
-    }
-
-    @objc private func selectDynamicsMenuItem(_ sender: NSMenuItem) {
-        guard
-            let rawValue = sender.representedObject as? String,
-            let dynamics = OrbDynamicsPreset(rawValue: rawValue)
-        else { return }
-        indicator.setDynamics(dynamics)
-        refreshStatusMenu()
     }
 
     @objc private func openPermissionsMenuItem() { openPermissions() }
@@ -3628,35 +2897,6 @@ private final class AppDelegate:
                 modelSelectionEnabled &&
                 model.supportsLocalSelection &&
                 availability.isAvailable
-        }
-
-        indicatorRootItem.title = "Recording Indicator"
-        indicatorRootItem.subtitle = indicator.style.displayName
-        for style in IndicatorStyle.allCases {
-            indicatorMenuItems[style]?.state =
-                style == indicator.style ? .on : .off
-        }
-
-        colorRootItem.title = "Indicator Color"
-        colorRootItem.subtitle = indicator.color.displayName
-        for color in IndicatorColor.allCases {
-            colorMenuItems[color]?.state =
-                color == indicator.color ? .on : .off
-        }
-
-        placementRootItem.title = "Indicator Position"
-        placementRootItem.subtitle = indicator.placement.displayName
-        for placement in IndicatorPlacement.allCases {
-            placementMenuItems[placement]?.state =
-                placement == indicator.placement ? .on : .off
-        }
-
-        dynamicsRootItem.title = "Orb Dynamics"
-        dynamicsRootItem.subtitle = indicator.dynamics.displayName
-        dynamicsRootItem.isEnabled = indicator.style == .orb
-        for dynamics in OrbDynamicsPreset.allCases {
-            dynamicsMenuItems[dynamics]?.state =
-                dynamics == indicator.dynamics ? .on : .off
         }
 
         let accessibility = AXIsProcessTrusted()

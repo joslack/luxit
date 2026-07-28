@@ -81,7 +81,6 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
         processing: Bool,
         completion: CGFloat,
         appearance: CGFloat,
-        dynamics: OrbDynamicsPreset,
         pointer: NSPoint?,
         accent: NSColor,
         highlight: NSColor,
@@ -138,11 +137,11 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
         uniformValues[19] = Float(pulse)
         uniformValues[20] = Float(max(1, backingScale))
         uniformValues[21] = Float(max(0, min(1, appearance)))
-        uniformValues[22] = Float(dynamics.currentScale)
-        uniformValues[23] = Float(dynamics.jitterScale)
-        uniformValues[24] = Float(dynamics.spatialScale)
-        uniformValues[25] = Float(dynamics.attractorBlend)
-        uniformValues[26] = Float(dynamics.voiceResponseScale)
+        uniformValues[22] = Float(VoiceOrbMotion.currentScale)
+        uniformValues[23] = Float(VoiceOrbMotion.jitterScale)
+        uniformValues[24] = Float(VoiceOrbMotion.spatialScale)
+        uniformValues[25] = 1
+        uniformValues[26] = Float(VoiceOrbMotion.voiceResponseScale)
         view?.draw()
     }
 

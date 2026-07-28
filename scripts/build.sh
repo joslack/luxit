@@ -59,8 +59,9 @@ swiftc \
   "$project_dir/Sources/Luxit/LogSpectrumAnalyzer.swift" \
   "$project_dir/Sources/Luxit/VoiceAnimationFilter.swift" \
   "$project_dir/Sources/Luxit/VoiceOrbGeometry.swift" \
+  "$project_dir/Sources/Luxit/VoiceOrbLayout.swift" \
   "$project_dir/Sources/Luxit/ModelCatalog.swift" \
-  "$project_dir/Sources/Luxit/OrbDynamicsPreset.swift" \
+  "$project_dir/Sources/Luxit/VoiceOrbMotion.swift" \
   "$project_dir/Sources/Luxit/MetalOrbRenderer.swift" \
   "$project_dir/Sources/Luxit/main.swift" \
   "$build_dir/WhisperBridge.o" \

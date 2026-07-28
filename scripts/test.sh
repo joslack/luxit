@@ -48,6 +48,25 @@ swiftc \
   -sdk "$sdk_path" \
   -target arm64-apple-macosx26.0 \
   -module-cache-path "$module_cache" \
+  "$project_dir/Sources/Luxit/VoiceOrbMotion.swift" \
+  "$project_dir/Sources/Luxit/VoiceOrbLayout.swift" \
+  "$project_dir/Tests/VoiceOrbConfigurationTests.swift" \
+  -o "$build_dir/VoiceOrbConfigurationTests"
+
+"$build_dir/VoiceOrbConfigurationTests"
+
+if rg -n \
+  'IndicatorStyle|IndicatorColor|IndicatorPlacement|OrbDynamicsPreset|indicator\.(style|color|placement|orbDynamics)' \
+  "$project_dir/Sources/Luxit"; then
+  echo "Legacy indicator configuration path remains in Sources/Luxit" >&2
+  exit 1
+fi
+
+swiftc \
+  -swift-version 5 \
+  -sdk "$sdk_path" \
+  -target arm64-apple-macosx26.0 \
+  -module-cache-path "$module_cache" \
   "$project_dir/Sources/Luxit/ModelCatalog.swift" \
   "$project_dir/Tests/ModelCatalogTests.swift" \
   -o "$build_dir/ModelCatalogTests"

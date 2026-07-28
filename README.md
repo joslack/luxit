@@ -18,16 +18,15 @@ A tiny, fully local macOS dictation utility:
   an ordinary F19 HID event while it runs, bypassing macOS's built-in Caps
   Lock activation delay. The model loads from disk in
   parallel while you speak, so recording itself starts immediately.
-- An audio-reactive indicator appears at the right edge of the display
+- A white, audio-reactive Voice Orb appears at the bottom-right of the display
   containing the active text cursor. Luxit locates the insertion caret through
   macOS Accessibility, then falls back to the focused element, focused window,
-  or mouse display when an app does not publish caret bounds. Choose the
-  localized **Ember**, larger **Equalizer**, or amorphous **Voice Orb** style
-  and one of three curated colors: Coral, Cyan, or Violet.
-- The Equalizer reflects 23 logarithmically spaced frequency bands from roughly
-  90 Hz to 8 kHz, measured with a Hann-windowed vDSP FFT. Silence stays flat;
-  recording does not mix in a decorative oscillator.
-- The Voice Orb maps that same spectrum into a deterministic 512-particle
+  or mouse display when an app does not publish caret bounds. Its style, color,
+  attractor motion, and placement are intentional product behavior rather than
+  configuration options.
+- The Voice Orb maps 23 logarithmically spaced frequency bands from roughly
+  90 Hz to 8 kHz, measured with a Hann-windowed vDSP FFT, into a deterministic
+  512-particle
   cloud: every frequency owns a stable constellation distributed across all
   quadrants, rather than one contiguous wedge. Live voice energy adds
   smoothly randomized movement whose wide permanent velocity range,
@@ -43,7 +42,7 @@ A tiny, fully local macOS dictation utility:
   that volume rather than determining whether it collapses. A transparent MetalKit
   point-sprite pipeline performs particle physics and rasterization on the
   Apple GPU at the active display's refresh cadence, without a background
-  halo. White is the default indicator color. Particles around the pointer
+  halo. Particles around the pointer
   dissipate and reform, while the overlay always passes clicks through to the
   app beneath it. AppKit remains as a renderer fallback when Metal is
   unavailable.
@@ -53,18 +52,7 @@ A tiny, fully local macOS dictation utility:
   audio. Logarithmic speech-band weighting suppresses much of HVAC rumble and
   high-frequency hiss, while a persistent per-band noise estimate subtracts
   stationary background energy.
-- A native **Orb Dynamics** submenu provides the two retained exploration
-  presets: Turbulent and Attractor. These vary temporal speed, current
-  strength, independent jitter, spatial correlation, and bounded
-  strange-field forcing. Attractor has stronger voice-force and voice-speed
-  coupling; Turbulent is the default.
-- Indicator position is configurable from the menu bar: Right Edge,
-  Bottom Right, Bottom Center, Bottom Left, Top Right, or Top Left. The chosen
-  position is applied to the display containing the active text cursor.
 - Press **Caps Lock** again to stop.
-- When recording stops, the Equalizer contracts into an amber traveling pulse
-  using the same bars while Whisper transcribes. After insertion, its bars
-  retract toward the screen edge in a short top-to-bottom fade.
 - When the Voice Orb is processing, it preserves the exact rotation, current,
   particle phases, and motion speed from the recording. A separate coherent
   inhale–exhale modulation is layered over that continuing flow until
