@@ -260,12 +260,15 @@ private final class EdgeIndicatorView: NSView {
         let processingBlend =
             VoiceOrbMotion.processingGeometryBlend(processing)
         let progress = max(0, min(1, completion))
-        let completionScale = 1 - (1 - pow(1 - progress, 3))
-        let completionAlpha = pow(1 - progress, 1.4)
+        let appearanceScale =
+            VoiceOrbMotion.visibilityScale(appearanceProgress)
+        let completionScale =
+            VoiceOrbMotion.visibilityScale(1 - progress)
         let appearanceAlpha =
-            appearanceProgress *
-            appearanceProgress *
-            (3 - 2 * appearanceProgress)
+            VoiceOrbMotion.visibilityAlpha(appearanceProgress)
+        let completionAlpha =
+            VoiceOrbMotion.visibilityAlpha(1 - progress)
+        let visibilityScale = appearanceScale * completionScale
         let voice = pow(max(0, min(1, audioLevel)), 0.72)
         let displayLevel = max(
             VoiceOrbMotion.idleVisualFloor,
@@ -284,9 +287,12 @@ private final class EdgeIndicatorView: NSView {
         )
         let center = NSPoint(x: bounds.midX, y: bounds.midY)
         let processingScale = 0.90 + pulse * 0.14
-        let baseRadius = (56 + displayLevel * 12) *
+        let baseRadius = (
+            VoiceOrbMotion.baseRadius +
+            displayLevel * VoiceOrbMotion.voiceRadiusGrowth
+        ) *
             (1 + (processingScale - 1) * processingBlend) *
-            completionScale
+            visibilityScale
         // Processing preserves the recording flow phase while a separate
         // radius modulation adds the unified breathing signal.
         let rotation = animationPhase * 0.11
@@ -424,7 +430,7 @@ private final class EdgeIndicatorView: NSView {
                 point.radius *
                 (0.28 + edgeFeather * 0.72) *
                 (1 - dissipation * 0.68) *
-                completionScale
+                visibilityScale
             )
             let pointColor = color.blended(
                 withFraction: min(0.72, point.intensity * 0.64),
@@ -530,7 +536,8 @@ private final class EdgeIndicator {
                 self.lastAnimationUptime = now
                 self.appearanceProgress = min(
                     1,
-                    self.appearanceProgress + elapsed / 0.38
+                    self.appearanceProgress +
+                        elapsed / VoiceOrbMotion.visibilityTransitionDuration
                 )
                 self.orbMotionPhase +=
                     elapsed *
@@ -571,7 +578,8 @@ private final class EdgeIndicator {
                 self.lastAnimationUptime = now
                 self.appearanceProgress = min(
                     1,
-                    self.appearanceProgress + elapsed / 0.38
+                    self.appearanceProgress +
+                        elapsed / VoiceOrbMotion.visibilityTransitionDuration
                 )
                 self.advanceProcessingTransition(elapsed: elapsed)
                 self.breathPhase += elapsed * 2.2
@@ -636,7 +644,8 @@ private final class EdgeIndicator {
         }
         let startedAt = ProcessInfo.processInfo.systemUptime
         lastAnimationUptime = startedAt
-        let duration: TimeInterval = 0.42
+        let duration =
+            TimeInterval(VoiceOrbMotion.visibilityTransitionDuration)
         let completionTimer = Timer(
             timeInterval: animationInterval,
             repeats: true
@@ -657,7 +666,8 @@ private final class EdgeIndicator {
             self.lastAnimationUptime = now
             self.appearanceProgress = min(
                 1,
-                self.appearanceProgress + frameElapsed / 0.38
+                self.appearanceProgress +
+                    frameElapsed / VoiceOrbMotion.visibilityTransitionDuration
             )
             self.advanceProcessingTransition(elapsed: frameElapsed)
             self.breathPhase += frameElapsed * 2.2

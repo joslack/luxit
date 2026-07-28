@@ -44,6 +44,30 @@ private enum VoiceOrbConfigurationTests {
             VoiceOrbMotion.processingColorBlend(1) == 0.55,
             "the processing color settles at a restrained warm tint"
         )
+        expect(
+            VoiceOrbMotion.visibilityTransitionDuration == 0.42,
+            "appearance and completion share one transition duration"
+        )
+        expect(
+            VoiceOrbMotion.visibilityScale(0) == 0 &&
+                VoiceOrbMotion.visibilityScale(1) == 1 &&
+                VoiceOrbMotion.visibilityAlpha(0) == 0 &&
+                VoiceOrbMotion.visibilityAlpha(1) == 1,
+            "the reversible visibility curves preserve their endpoints"
+        )
+        let halfwayScale = VoiceOrbMotion.visibilityScale(0.5)
+        let halfwayAlpha = VoiceOrbMotion.visibilityAlpha(0.5)
+        expect(
+            halfwayScale > 0 &&
+                halfwayScale < halfwayAlpha &&
+                halfwayAlpha < 1,
+            "the orb grows from its center while it fades in"
+        )
+        expect(
+            VoiceOrbMotion.baseRadius == 70 &&
+                VoiceOrbMotion.voiceRadiusGrowth == 15,
+            "the orb keeps its enlarged shared visual footprint"
+        )
 
         let visibleFrame = CGRect(x: 100, y: 40, width: 1_200, height: 800)
         let frame = VoiceOrbLayout.frame(in: visibleFrame)
