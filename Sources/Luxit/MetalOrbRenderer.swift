@@ -114,7 +114,8 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
         let progress = max(0, min(1, completion))
         let completionAlpha =
             VoiceOrbMotion.visibilityAlpha(1 - progress)
-        let processingScale = 0.90 + pulse * 0.14
+        let processingScale =
+            VoiceOrbMotion.processingBreathScale(pulse)
         let baseRadius = (
             VoiceOrbMotion.baseRadius +
             displayLevel * VoiceOrbMotion.voiceRadiusGrowth
@@ -406,7 +407,7 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
             radius * 2.0 *
                 (0.28 + edgeFeather * 0.72) *
                 (1.0 - dissipation * 0.68) *
-                (0.55 + condensation * 0.45) *
+                (0.55 + appearanceCondensation * 0.45) *
                 u[20]
         );
         out.color = float4(color, alpha);

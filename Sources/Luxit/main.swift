@@ -262,9 +262,13 @@ private final class EdgeIndicatorView: NSView {
         let progress = max(0, min(1, completion))
         let completionAlpha =
             VoiceOrbMotion.visibilityAlpha(1 - progress)
+        let appearanceCondensation =
+            VoiceOrbMotion.materializationBlend(appearanceProgress)
         let condensation =
-            VoiceOrbMotion.materializationBlend(appearanceProgress) *
-            (1 - VoiceOrbMotion.materializationBlend(progress))
+            VoiceOrbMotion.materializationCondensation(
+                appearance: appearanceProgress,
+                completion: progress
+            )
         let voice = pow(max(0, min(1, audioLevel)), 0.72)
         let displayLevel = max(
             VoiceOrbMotion.idleVisualFloor,
@@ -282,7 +286,8 @@ private final class EdgeIndicatorView: NSView {
             level: displayLevel
         )
         let center = NSPoint(x: bounds.midX, y: bounds.midY)
-        let processingScale = 0.90 + pulse * 0.14
+        let processingScale =
+            VoiceOrbMotion.processingBreathScale(pulse)
         let baseRadius = (
             VoiceOrbMotion.baseRadius +
             displayLevel * VoiceOrbMotion.voiceRadiusGrowth
@@ -300,7 +305,9 @@ private final class EdgeIndicatorView: NSView {
                 panelExtent: min(bounds.width, bounds.height)
             )
         let materializationDotScale =
-            VoiceOrbMotion.materializationDotScale(condensation)
+            VoiceOrbMotion.materializationDotScale(
+                appearanceCondensation
+            )
         for (index, point) in points.enumerated() {
             let rotatedX = point.x * cosine - point.y * sine
             let rotatedY = point.x * sine + point.y * cosine
@@ -499,6 +506,8 @@ private final class EdgeIndicator {
     private var lastAnimationUptime: TimeInterval = 0
     private var appearanceProgress: CGFloat = 0
     private var processingProgress: CGFloat = 0
+    private var processingBeganAt: TimeInterval?
+    private var pendingCompletionWorkItem: DispatchWorkItem?
     private let voiceAnimationFilter = VoiceAnimationFilter()
     private var targetDisplayID: NSNumber?
 
@@ -508,6 +517,11 @@ private final class EdgeIndicator {
 
     func show(_ state: EdgeState) {
         let previousState = currentState
+        if state != .processing {
+            pendingCompletionWorkItem?.cancel()
+            pendingCompletionWorkItem = nil
+            processingBeganAt = nil
+        }
         currentState = state
         for surface in surfaces {
             surface.view.completionProgress = 0
@@ -528,10 +542,11 @@ private final class EdgeIndicator {
                 "source=\(target.source)"
             )
         } else if state == .processing && previousState != .processing {
-            // Preserve the exact flow phase from recording and begin a
-            // separate breathing cycle at the bottom of an inhale.
+            // Preserve the exact flow phase and full cloud volume, then begin
+            // a separate processing breath without an inward preparatory beat.
             breathPhase = -.pi / 2
             processingProgress = 0
+            processingBeganAt = ProcessInfo.processInfo.systemUptime
         } else if state == .error {
             appearanceProgress = 1
             processingProgress = 1
@@ -657,6 +672,33 @@ private final class EdgeIndicator {
             return
         }
 
+        if let processingBeganAt {
+            let elapsed =
+                ProcessInfo.processInfo.systemUptime - processingBeganAt
+            let remaining =
+                TimeInterval(VoiceOrbMotion.processingMinimumDwell) -
+                elapsed
+            if remaining > 0 {
+                pendingCompletionWorkItem?.cancel()
+                let workItem = DispatchWorkItem { [weak self] in
+                    guard let self, self.currentState == .processing else {
+                        return
+                    }
+                    self.pendingCompletionWorkItem = nil
+                    self.complete()
+                }
+                pendingCompletionWorkItem = workItem
+                DispatchQueue.main.asyncAfter(
+                    deadline: .now() + remaining,
+                    execute: workItem
+                )
+                return
+            }
+        }
+
+        pendingCompletionWorkItem?.cancel()
+        pendingCompletionWorkItem = nil
+        processingBeganAt = nil
         timer?.invalidate()
         currentState = .completing
         for surface in surfaces where surface.panel.isVisible {
@@ -685,11 +727,6 @@ private final class EdgeIndicator {
                 max(0, now - self.lastAnimationUptime)
             )
             self.lastAnimationUptime = now
-            self.appearanceProgress = min(
-                1,
-                self.appearanceProgress +
-                    frameElapsed / VoiceOrbMotion.appearanceTransitionDuration
-            )
             self.advanceProcessingTransition(elapsed: frameElapsed)
             self.breathPhase += frameElapsed * 2.2
             self.orbMotionPhase +=
@@ -819,6 +856,9 @@ private final class EdgeIndicator {
     }
 
     func hide() {
+        pendingCompletionWorkItem?.cancel()
+        pendingCompletionWorkItem = nil
+        processingBeganAt = nil
         timer?.invalidate()
         timer = nil
         currentState = .hidden

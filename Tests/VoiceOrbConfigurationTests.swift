@@ -45,9 +45,10 @@ private enum VoiceOrbConfigurationTests {
             "the processing color settles at a restrained warm tint"
         )
         expect(
+            VoiceOrbMotion.processingMinimumDwell == 0.32 &&
             VoiceOrbMotion.appearanceTransitionDuration == 0.56 &&
                 VoiceOrbMotion.completionTransitionDuration == 0.42,
-            "materialization and dematerialization keep deliberate timing"
+            "processing and materialization keep deliberate timing"
         )
         expect(
             VoiceOrbMotion.visibilityAlpha(0) == 0 &&
@@ -64,6 +65,22 @@ private enum VoiceOrbConfigurationTests {
                 VoiceOrbMotion.materializationBlend(1) == 1,
             "the loose field condenses fully and can reverse cleanly"
         )
+        let partialCondensation =
+            VoiceOrbMotion.materializationCondensation(
+                appearance: 0.4,
+                completion: 0
+            )
+        expect(
+            VoiceOrbMotion.materializationCondensation(
+                appearance: 0.4,
+                completion: 0.5
+            ) < partialCondensation &&
+                VoiceOrbMotion.materializationCondensation(
+                    appearance: 0.4,
+                    completion: 1
+                ) == 0,
+            "completion only releases the current cloud outward"
+        )
         expect(
             VoiceOrbMotion.materializationFieldRadius(
                 baseRadius: 70,
@@ -78,7 +95,12 @@ private enum VoiceOrbConfigurationTests {
         expect(
             VoiceOrbMotion.materializationDotScale(0) == 0.55 &&
                 VoiceOrbMotion.materializationDotScale(1) == 1,
-            "particles are smaller while materializing and dematerializing"
+            "particles grow while materializing and stay full-size afterward"
+        )
+        expect(
+            VoiceOrbMotion.processingBreathScale(0) == 1 &&
+                VoiceOrbMotion.processingBreathScale(1) == 1.06,
+            "processing begins at full volume instead of contracting"
         )
         expect(
             VoiceOrbMotion.materializationAlpha(0, seed: 0.5) == 0 &&
