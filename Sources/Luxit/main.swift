@@ -464,6 +464,27 @@ private final class EdgeIndicatorView: NSView {
                 withFraction: min(0.72, point.intensity * 0.64),
                 of: highlight
             ) ?? color
+            let rimWidth = min(
+                0.8,
+                max(
+                    VoiceOrbMotion.particleContrastRimWidth,
+                    dotRadius * 0.22
+                )
+            )
+            NSColor(
+                calibratedWhite: 0.07,
+                alpha:
+                    alpha *
+                    VoiceOrbMotion.particleContrastRimOpacity
+            ).setFill()
+            NSBezierPath(
+                ovalIn: NSRect(
+                    x: position.x - dotRadius - rimWidth,
+                    y: position.y - dotRadius - rimWidth,
+                    width: (dotRadius + rimWidth) * 2,
+                    height: (dotRadius + rimWidth) * 2
+                )
+            ).fill()
             pointColor.withAlphaComponent(alpha).setFill()
             NSBezierPath(
                 ovalIn: NSRect(

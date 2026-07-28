@@ -8,6 +8,8 @@ enum VoiceOrbMotion {
     static let voiceResponseScale: CGFloat = 1.65
     static let baseRadius: CGFloat = 70
     static let voiceRadiusGrowth: CGFloat = 15
+    static let particleContrastRimWidth: CGFloat = 0.45
+    static let particleContrastRimOpacity: CGFloat = 0.25
 
     static let idleVisualFloor: CGFloat = 0.12
     static let processingLevelFloor: CGFloat = 0.48

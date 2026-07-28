@@ -20,7 +20,9 @@ private enum VoiceOrbConfigurationTests {
                 VoiceOrbMotion.jitterScale == 0.58 &&
                 VoiceOrbMotion.spatialScale == 1.08 &&
                 VoiceOrbMotion.voiceResponseScale == 1.65 &&
-                VoiceOrbMotion.idleVisualFloor == 0.12,
+                VoiceOrbMotion.idleVisualFloor == 0.12 &&
+                VoiceOrbMotion.particleContrastRimWidth == 0.45 &&
+                VoiceOrbMotion.particleContrastRimOpacity == 0.25,
             "the sole orb motion remains the attractor behavior"
         )
         let firstProcessingFrame =
@@ -46,7 +48,7 @@ private enum VoiceOrbConfigurationTests {
         )
         expect(
             VoiceOrbMotion.processingMinimumDwell == 0.32 &&
-            VoiceOrbMotion.appearanceTransitionDuration == 0.56 &&
+                VoiceOrbMotion.appearanceTransitionDuration == 0.56 &&
                 VoiceOrbMotion.completionTransitionDuration == 0.42,
             "processing and materialization keep deliberate timing"
         )

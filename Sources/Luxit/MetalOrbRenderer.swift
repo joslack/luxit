@@ -9,7 +9,7 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
     private weak var view: MTKView?
     private var particleBuffer: MTLBuffer?
     private var particleCount = 0
-    private var uniformValues = [Float](repeating: 0, count: 28)
+    private var uniformValues = [Float](repeating: 0, count: 30)
     private var lastSpectrum: [CGFloat] = []
     private var lastLevel: CGFloat = -1
 
@@ -161,6 +161,12 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
                 panelExtent: min(bounds.width, bounds.height)
             )
         )
+        uniformValues[28] = Float(
+            VoiceOrbMotion.particleContrastRimWidth
+        )
+        uniformValues[29] = Float(
+            VoiceOrbMotion.particleContrastRimOpacity
+        )
         view?.draw()
     }
 
@@ -245,6 +251,8 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
         float4 position [[position]];
         float pointSize [[point_size]];
         float4 color;
+        float coreRatio;
+        float rimOpacity;
     };
 
     float hashValue(uint value) {
@@ -402,7 +410,7 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
             0.0,
             1.0
         );
-        out.pointSize = max(
+        float coreSize = max(
             0.5,
             radius * 2.0 *
                 (0.28 + edgeFeather * 0.72) *
@@ -410,6 +418,10 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
                 (0.55 + appearanceCondensation * 0.45) *
                 u[20]
         );
+        float rimWidth = u[28] * u[20];
+        out.pointSize = coreSize + rimWidth * 2.0;
+        out.coreRatio = coreSize / out.pointSize;
+        out.rimOpacity = u[29];
         out.color = float4(color, alpha);
         return out;
     }
@@ -419,8 +431,24 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
         float2 pointCoordinate [[point_coord]]
     ) {
         float distance = length(pointCoordinate - float2(0.5)) * 2.0;
-        float coverage = 1.0 - smoothstep(0.72, 1.0, distance);
-        return half4(half3(in.color.rgb), half(in.color.a * coverage));
+        float outerCoverage = 1.0 - smoothstep(0.72, 1.0, distance);
+        float coreCoverage = 1.0 - smoothstep(
+            in.coreRatio * 0.72,
+            in.coreRatio,
+            distance
+        );
+        float rimCoverage = max(0.0, outerCoverage - coreCoverage);
+        float rimWeight = rimCoverage * in.rimOpacity;
+        float totalCoverage = coreCoverage + rimWeight;
+        float3 graphite = float3(0.07);
+        float3 compositedColor = (
+            in.color.rgb * coreCoverage +
+            graphite * rimWeight
+        ) / max(0.0001, totalCoverage);
+        return half4(
+            half3(compositedColor),
+            half(in.color.a * totalCoverage)
+        );
     }
     """
 }
