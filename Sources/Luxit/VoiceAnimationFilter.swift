@@ -13,18 +13,20 @@ struct VoiceAnimationFrame {
 /// hiss. A persistent, slowly adapting per-band noise estimate then subtracts
 /// stationary energy while preserving changing voice/formant energy.
 final class VoiceAnimationFilter {
-    static let calibrationFrameCount = 8
+    static let calibrationFrameCount = 3
 
     private var noiseEstimate: [Float] = []
     private var hasNoiseBaseline = false
     private var tonalBackground: Float = 0
     private var calibrationFramesRemaining = 0
+    private var calibrationFramesObserved = 0
 
     func beginRecording() {
         noiseEstimate = []
         hasNoiseBaseline = false
         tonalBackground = 0
         calibrationFramesRemaining = Self.calibrationFrameCount
+        calibrationFramesObserved = 0
     }
 
     func process(level: Float, spectrum: [Float]) -> VoiceAnimationFrame {
@@ -58,13 +60,14 @@ final class VoiceAnimationFilter {
             voiceWeightedEnergy += current * weight
 
             if isCalibrating {
-                // HVAC energy fluctuates even though it sounds stationary.
-                // Keep the strongest observed value in each band during the
-                // short materialization window so those fluctuations become
-                // part of the room baseline instead of animating the orb.
-                noiseEstimate[index] = hadNoiseBaseline
-                    ? max(noiseEstimate[index], current)
-                    : current
+                // Average a few frames rather than retaining their peaks. This
+                // captures turbulent HVAC energy without absorbing the start
+                // of the user's first word into the room baseline.
+                let observed = Float(calibrationFramesObserved + 1)
+                noiseEstimate[index] = calibrationFramesObserved == 0
+                    ? current
+                    : noiseEstimate[index] +
+                        (current - noiseEstimate[index]) / observed
             } else if !hadNoiseBaseline {
                 // Capture the room on the first microphone frame even when a
                 // nearby fan or A/C is louder than the ordinary quiet limit.
@@ -101,6 +104,7 @@ final class VoiceAnimationFilter {
         }
         hasNoiseBaseline = true
         if isCalibrating {
+            calibrationFramesObserved += 1
             calibrationFramesRemaining -= 1
             return VoiceAnimationFrame(
                 level: 0,

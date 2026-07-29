@@ -113,8 +113,14 @@ private enum VoiceAnimationFilterTests {
         )
         for frame in 0..<VoiceAnimationFilter.calibrationFrameCount {
             let fluctuation = Float(frame % 3) * 0.08
-            let calibrationSpectrum = hvacSpectrum.map {
-                $0 * (1 + fluctuation)
+            let calibrationSpectrum = hvacSpectrum.enumerated().map {
+                index, energy in
+                let earlyVoice: Float =
+                    frame == VoiceAnimationFilter.calibrationFrameCount - 1 &&
+                    [7, 11, 15].contains(index)
+                        ? 1.4
+                        : 0
+                return energy * (1 + fluctuation) + earlyVoice
             }
             let calibrationFrame = hvacFilter.process(
                 level: 0.018 + fluctuation * 0.01,
