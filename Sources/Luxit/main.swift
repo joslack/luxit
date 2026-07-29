@@ -264,10 +264,10 @@ private final class EdgeIndicatorView: NSView {
                 NSColor.white.blended(
                     withFraction: colorBlend,
                     of: NSColor(
-                    calibratedRed: 1,
-                    green: 0.87,
-                    blue: 0.52,
-                    alpha: 1
+                        calibratedRed: 1,
+                        green: 0.87,
+                        blue: 0.52,
+                        alpha: 1
                     )
                 ) ?? .white
             )
@@ -430,10 +430,29 @@ private final class EdgeIndicatorView: NSView {
                         point.flowPhaseY * 0.16,
                     channel: 1
                 ) * jitterAmount
+            let radialDistance = hypot(point.x, point.y)
+            let rippleOffset = VoiceOrbMotion.processingRippleOffset(
+                radialDistance: radialDistance,
+                processingProgress: processing,
+                completion: progress
+            )
+            let safeRadialDistance = max(0.0001, radialDistance)
+            let rippleX =
+                rotatedX / safeRadialDistance * rippleOffset
+            let rippleY =
+                rotatedY / safeRadialDistance * rippleOffset
             let settledX =
-                rotatedX * baseRadius + flowX + attractorX + noiseX
+                rotatedX * baseRadius +
+                flowX +
+                attractorX +
+                noiseX +
+                rippleX
             let settledY =
-                rotatedY * baseRadius + flowY + attractorY + noiseY
+                rotatedY * baseRadius +
+                flowY +
+                attractorY +
+                noiseY +
+                rippleY
             let radialSeed = max(
                 0,
                 min(1, point.flowPhaseY / (2 * .pi))
@@ -465,7 +484,6 @@ private final class EdgeIndicatorView: NSView {
                 }
             }
 
-            let radialDistance = hypot(point.x, point.y)
             let edgeFeather = pow(
                 max(
                     0,
@@ -493,56 +511,62 @@ private final class EdgeIndicatorView: NSView {
                     1 - progress,
                     seed: point.flowPhase / (2 * .pi)
                 )
-            guard alpha > 0.008 else { continue }
-            let dotRadius = max(
-                0.18,
+            guard alpha > 0 else { continue }
+            let baseDotRadius = max(
+                VoiceOrbMotion.minimumParticleRadius,
                 point.radius *
                 (0.28 + edgeFeather * 0.72) *
                 (1 - dissipation * 0.68) *
-                materializationDotScale
+                    materializationDotScale
             )
-            let pointColor = color.blended(
-                withFraction: min(0.72, point.intensity * 0.64),
-                of: highlight
-            ) ?? color
-            let deviceColor =
-                pointColor.usingColorSpace(.deviceRGB) ?? pointColor
-            let coreLuminance = VoiceOrbMotion.particleLuminance(
-                red: deviceColor.redComponent,
-                green: deviceColor.greenComponent,
-                blue: deviceColor.blueComponent
-            )
-            let rimWidth = VoiceOrbMotion.particleContrastRimWidth(
-                coreRadius: dotRadius
-            )
-            NSColor(
-                calibratedWhite:
-                    VoiceOrbMotion.particleContrastRimWhite(
-                        coreLuminance: coreLuminance
-                    ),
-                alpha:
-                    alpha *
-                    VoiceOrbMotion.particleContrastRimOpacity(
-                        coreLuminance: coreLuminance
-                    )
-            ).setFill()
-            NSBezierPath(
-                ovalIn: NSRect(
-                    x: position.x - dotRadius - rimWidth,
-                    y: position.y - dotRadius - rimWidth,
-                    width: (dotRadius + rimWidth) * 2,
-                    height: (dotRadius + rimWidth) * 2
+            let pointColor =
+                color.blended(
+                    withFraction: min(0.72, point.intensity * 0.64),
+                    of: highlight
+                ) ?? color
+            let dotRadius = baseDotRadius
+            let gradientEdgeWidth =
+                VoiceOrbMotion.particleHaloWidth(
+                    coreRadius: dotRadius
                 )
-            ).fill()
-            pointColor.withAlphaComponent(alpha).setFill()
-            NSBezierPath(
-                ovalIn: NSRect(
-                    x: position.x - dotRadius,
-                    y: position.y - dotRadius,
-                    width: dotRadius * 2,
-                    height: dotRadius * 2
+            let outerRadius = dotRadius + gradientEdgeWidth
+            func moteColor(at radius: CGFloat) -> NSColor {
+                let field =
+                    VoiceOrbMotion.particleMoteField(radius: radius)
+                return pointColor.withAlphaComponent(
+                    alpha * field
                 )
-            ).fill()
+            }
+            let gradient = NSGradient(
+                colorsAndLocations:
+                    (moteColor(at: 0), 0),
+                    (moteColor(at: 0.28), 0.28),
+                    (moteColor(at: 0.56), 0.56),
+                    (moteColor(at: 0.78), 0.78),
+                    (moteColor(at: 1), 1)
+            )
+            guard let context = NSGraphicsContext.current?.cgContext else {
+                continue
+            }
+            context.saveGState()
+            context.translateBy(x: position.x, y: position.y)
+            context.rotate(by: point.flowPhase)
+            context.scaleBy(
+                x: VoiceOrbMotion.particleMoteAspect(
+                    seed: point.flowPhaseY / (2 * .pi)
+                ),
+                y: 1
+            )
+            gradient?.draw(
+                in: NSRect(
+                    x: -outerRadius,
+                    y: -outerRadius,
+                    width: outerRadius * 2,
+                    height: outerRadius * 2
+                ),
+                relativeCenterPosition: .zero
+            )
+            context.restoreGState()
         }
     }
 
@@ -578,6 +602,7 @@ private final class EdgeIndicator {
     private var processingProgress: CGFloat = 0
     private var processingBeganAt: TimeInterval?
     private var pendingCompletionWorkItem: DispatchWorkItem?
+    private var completionUsesProcessing = false
     private let voiceAnimationFilter = VoiceAnimationFilter()
     private var targetDisplayID: NSNumber?
 
@@ -742,6 +767,7 @@ private final class EdgeIndicator {
     }
 
     func complete() {
+        guard currentState != .completing else { return }
         guard currentState == .processing else {
             hide()
             return
@@ -771,10 +797,24 @@ private final class EdgeIndicator {
             }
         }
 
+        beginCompletion(usesProcessing: true)
+    }
+
+    func completeRecording() {
+        guard currentState == .recording else {
+            complete()
+            return
+        }
+        beginCompletion(usesProcessing: false)
+    }
+
+    private func beginCompletion(usesProcessing: Bool) {
         pendingCompletionWorkItem?.cancel()
         pendingCompletionWorkItem = nil
         processingBeganAt = nil
+        completionUsesProcessing = usesProcessing
         timer?.invalidate()
+        timer = nil
         currentState = .completing
         for surface in surfaces where surface.panel.isVisible {
             surface.view.performVisualUpdate {
@@ -804,7 +844,9 @@ private final class EdgeIndicator {
                 max(0, now - self.lastAnimationUptime)
             )
             self.lastAnimationUptime = now
-            self.advanceProcessingTransition(elapsed: frameElapsed)
+            if self.completionUsesProcessing {
+                self.advanceProcessingTransition(elapsed: frameElapsed)
+            }
             self.breathPhase += frameElapsed * 2.2
             self.orbMotionPhase +=
                 frameElapsed *
@@ -943,6 +985,7 @@ private final class EdgeIndicator {
         processingBeganAt = nil
         timer?.invalidate()
         timer = nil
+        completionUsesProcessing = false
         currentState = .hidden
         targetDisplayID = nil
         processingProgress = 0
@@ -3259,7 +3302,7 @@ private final class AppDelegate:
     private func finishRecording() {
         guard let recorded = recorder.stop() else {
             state = .idle
-            refreshActivityUI()
+            refreshActivityUI(recordingEndedWithoutSpeech: true)
             return
         }
         state = .idle
@@ -3277,7 +3320,10 @@ private final class AppDelegate:
         if recorded.isLikelySilent {
             try? FileManager.default.removeItem(at: recorded.url)
             DiagnosticLog.write("Recording discarded: no speech detected")
-            refreshActivityUI(idleMessage: "No speech detected — ready")
+            refreshActivityUI(
+                idleMessage: "No speech detected — ready",
+                recordingEndedWithoutSpeech: true
+            )
             if pendingTranscriptions == 0 {
                 transcriptionEngine.unload(after: modelIdleTimeoutSeconds)
             }
@@ -3413,7 +3459,10 @@ private final class AppDelegate:
         return "Recording…\(modelStatus)\(queueStatus)"
     }
 
-    private func refreshActivityUI(idleMessage: String? = nil) {
+    private func refreshActivityUI(
+        idleMessage: String? = nil,
+        recordingEndedWithoutSpeech: Bool = false
+    ) {
         if state == .recording {
             indicator.show(.recording)
             setStatus(recordingStatusText(), symbol: "record.circle.fill")
@@ -3425,7 +3474,11 @@ private final class AppDelegate:
                 symbol: "ellipsis.circle.fill"
             )
         } else {
-            indicator.complete()
+            if recordingEndedWithoutSpeech {
+                indicator.completeRecording()
+            } else {
+                indicator.complete()
+            }
             if let pendingModelActivation {
                 activateModel(pendingModelActivation)
                 return

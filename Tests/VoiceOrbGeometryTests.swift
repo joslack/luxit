@@ -22,8 +22,8 @@ private enum VoiceOrbGeometryTests {
 
         expect(
             first.count == VoiceOrbGeometry.defaultPointCount &&
-                first.count == 768,
-            "the denser default cloud should contain 768 points"
+                first.count == 1024,
+            "the denser default cloud should contain 1,024 points"
         )
         expect(first == repeated, "the same sound must produce the same cloud")
         expect(first != changed, "different spectra should produce different clouds")
