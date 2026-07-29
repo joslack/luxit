@@ -278,8 +278,10 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
     struct OrbVertexOut {
         float4 position [[position]];
         float pointSize [[point_size]];
-        float4 color;
-        float coreRatio;
+        float3 color;
+        float2 moteAxis;
+        float moteAspect;
+        float alpha;
         float edrHeadroom;
     };
 
@@ -370,7 +372,24 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
             motionNoise(vertexID, noiseTimeX, 0),
             motionNoise(vertexID, noiseTimeY, 1)
         ) * jitterAmount;
+        float radialDistance = length(base);
+        float waveFront = clamp(u[7], 0.0, 1.0) * 1.35;
+        float rippleDistance = radialDistance - waveFront;
+        float rippleEntrance = smoothstep(
+            0.0,
+            0.12,
+            clamp(u[7], 0.0, 1.0)
+        );
+        float rippleOffset =
+            exp(-(rippleDistance * rippleDistance) * 38.0) *
+            9.0 *
+            rippleEntrance *
+            (1.0 - completion);
         float2 settled = rotated * u[2] + flow + jitter;
+        float2 radialDirection = radialDistance > 0.0001
+            ? rotated / radialDistance
+            : float2(0.0);
+        settled += radialDirection * rippleOffset;
         float radialSeed = clamp(
             flowPhaseY / (2.0 * M_PI_F),
             0.0,
@@ -396,7 +415,6 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
             }
         }
 
-        float radialDistance = length(base);
         float edgeFeather = pow(
             max(0.0, 1.0 - smoothstep(0.62, 1.34, radialDistance)),
             1.18
@@ -425,7 +443,7 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
                 1.0 - completion
             );
         float colorMix = min(0.72, intensity * 0.64);
-        float3 color = mix(
+        float3 particleColor = mix(
             float3(u[13], u[14], u[15]),
             float3(u[16], u[17], u[18]),
             colorMix
@@ -439,7 +457,7 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
             1.0
         );
         float coreSize = max(
-            0.5,
+            1.10 * u[20],
             radius * 2.0 *
                 (0.28 + edgeFeather * 0.72) *
                 (1.0 - dissipation * 0.68) *
@@ -447,11 +465,21 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
                 u[20]
         );
         float logicalCoreRadius = coreSize / (2.0 * u[20]);
-        float rimWidth =
-            clamp(logicalCoreRadius * 0.16, 0.38, 0.56) * u[20];
-        out.pointSize = coreSize + rimWidth * 2.0;
-        out.coreRatio = coreSize / out.pointSize;
-        out.color = float4(color, alpha);
+        float gradientEdgeWidth =
+            clamp(logicalCoreRadius * 0.25, 0.50, 0.80) * u[20];
+        out.pointSize = coreSize + gradientEdgeWidth * 2.0;
+        out.color = particleColor;
+        out.moteAxis = float2(cos(flowPhaseX), sin(flowPhaseX));
+        out.moteAspect = mix(
+            0.86,
+            1.0,
+            smoothstep(
+                0.0,
+                1.0,
+                fract(flowPhaseY / (2.0 * M_PI_F))
+            )
+        );
+        out.alpha = alpha;
         out.edrHeadroom = u[28];
         return out;
     }
@@ -460,31 +488,25 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
         OrbVertexOut in [[stage_in]],
         float2 pointCoordinate [[point_coord]]
     ) {
-        float distance = length(pointCoordinate - float2(0.5)) * 2.0;
-        float outerCoverage = 1.0 - smoothstep(0.72, 1.0, distance);
-        float coreCoverage = 1.0 - smoothstep(
-            in.coreRatio * 0.72,
-            in.coreRatio,
-            distance
+        float2 local = (pointCoordinate - float2(0.5)) * 2.0;
+        float2 perpendicular = float2(
+            -in.moteAxis.y,
+            in.moteAxis.x
         );
-        float rimCoverage = max(0.0, outerCoverage - coreCoverage);
-        float coreLuminance = dot(
-            in.color.rgb,
-            float3(0.2126, 0.7152, 0.0722)
+        float2 moteCoordinate = float2(
+            dot(local, in.moteAxis) / in.moteAspect,
+            dot(local, perpendicular)
         );
-        float lightCore = smoothstep(0.45, 0.82, coreLuminance);
-        float rimOpacity = mix(0.12, 0.34, lightCore);
-        float3 rimColor = float3(mix(1.0, 0.07, lightCore));
-        float rimWeight = rimCoverage * rimOpacity;
-        float totalCoverage = coreCoverage + rimWeight;
-        float3 coreColor = in.color.rgb * in.edrHeadroom;
-        float3 compositedColor = (
-            coreColor * coreCoverage +
-            rimColor * rimWeight
-        ) / max(0.0001, totalCoverage);
+        float ellipticalRadius = length(moteCoordinate);
+        float field = 1.0 - smoothstep(
+            0.06,
+            1.0,
+            ellipticalRadius
+        );
+        field = pow(max(0.0, field), 0.82);
         return half4(
-            half3(compositedColor),
-            half(in.color.a * totalCoverage)
+            half3(in.color * in.edrHeadroom),
+            half(in.alpha * field)
         );
     }
     """

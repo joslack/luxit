@@ -20,55 +20,43 @@ private enum VoiceOrbConfigurationTests {
                 VoiceOrbMotion.jitterScale == 0.58 &&
                 VoiceOrbMotion.spatialScale == 1.08 &&
                 VoiceOrbMotion.voiceResponseScale == 1.65 &&
-                VoiceOrbMotion.idleVisualFloor == 0.12,
+                VoiceOrbMotion.idleVisualFloor == 0.12 &&
+                VoiceOrbMotion.baseRadius == 78 &&
+                VoiceOrbMotion.voiceRadiusGrowth == 10,
             "the sole orb motion remains the attractor behavior"
         )
-        let whiteLuminance = VoiceOrbMotion.particleLuminance(
-            red: 1,
-            green: 1,
-            blue: 1
-        )
-        let darkLuminance = VoiceOrbMotion.particleLuminance(
-            red: 0.1,
-            green: 0.1,
-            blue: 0.1
-        )
         expect(
-            whiteLuminance == 1 &&
-                darkLuminance > 0.09 &&
-                darkLuminance < 0.11,
-            "particle contrast uses perceptual core luminance"
-        )
-        expect(
-            VoiceOrbMotion.particleContrastRimWidth(
+            VoiceOrbMotion.minimumParticleRadius == 0.55 &&
+                VoiceOrbMotion.particleHaloWidth(
                 coreRadius: 0.2
-            ) == 0.38 &&
-                VoiceOrbMotion.particleContrastRimWidth(
+            ) == 0.50 &&
+                VoiceOrbMotion.particleHaloWidth(
                     coreRadius: 10
-                ) == 0.56,
-            "the contrast keyline remains visible without becoming a ring"
+                ) == 0.80,
+            "particles retain enough area for a soft halo"
         )
-        let whiteRimOpacity =
-            VoiceOrbMotion.particleContrastRimOpacity(
-                coreLuminance: whiteLuminance
-            )
-        let whiteRimWhite =
-            VoiceOrbMotion.particleContrastRimWhite(
-                coreLuminance: whiteLuminance
-            )
+        let compressedMote =
+            VoiceOrbMotion.particleMoteAspect(seed: 0)
+        let roundMote =
+            VoiceOrbMotion.particleMoteAspect(seed: 0.999999)
         expect(
-            abs(whiteRimOpacity - 0.34) < 0.0001 &&
-                abs(whiteRimWhite - 0.07) < 0.0001,
-            "white particles receive a slim graphite keyline"
+            compressedMote == 0.86 &&
+                roundMote > 0.999 &&
+                roundMote <= 1,
+            "stable aspect variation keeps motes subtly irregular"
         )
+        let centerField =
+            VoiceOrbMotion.particleMoteField(radius: 0)
+        let middleField =
+            VoiceOrbMotion.particleMoteField(radius: 0.5)
+        let outerField =
+            VoiceOrbMotion.particleMoteField(radius: 1)
         expect(
-            VoiceOrbMotion.particleContrastRimOpacity(
-                coreLuminance: darkLuminance
-            ) == 0.12 &&
-                VoiceOrbMotion.particleContrastRimWhite(
-                    coreLuminance: darkLuminance
-                ) == 1,
-            "dark particles retain a restrained pale keyline"
+            centerField == 1 &&
+                middleField > outerField &&
+                middleField < centerField &&
+                outerField == 0,
+            "each mote is one monotonic field without visible color bands"
         )
         expect(
             VoiceOrbMotion.particleEDRGain(
@@ -80,7 +68,7 @@ private enum VoiceOrbConfigurationTests {
                 VoiceOrbMotion.particleEDRGain(
                     availableHeadroom: 3
                 ) == 1.55,
-            "whole particles use available display headroom safely"
+            "the checkpoint dot color keeps its bright display headroom"
         )
         expect(
             VoiceOrbMotion.particleBaseAlpha(intensity: 0) == 0.65 &&
@@ -102,12 +90,27 @@ private enum VoiceOrbConfigurationTests {
             "processing transition advances monotonically without jumping"
         )
         expect(
-            VoiceOrbMotion.processingColorBlend(firstProcessingFrame) == 0,
-            "the recording-to-processing handoff stays white initially"
+            VoiceOrbMotion.processingColorBlend(firstProcessingFrame) == 0 &&
+                VoiceOrbMotion.processingColorBlend(1) == 0.55,
+            "processing restores the checkpoint's restrained warm color"
         )
         expect(
-            VoiceOrbMotion.processingColorBlend(1) == 0.55,
-            "the processing color settles at a restrained warm tint"
+            VoiceOrbMotion.processingRippleOffset(
+                radialDistance: 0.675,
+                processingProgress: 0.5,
+                completion: 0
+            ) == VoiceOrbMotion.processingRippleAmplitude &&
+                VoiceOrbMotion.processingRippleOffset(
+                    radialDistance: 0.675,
+                    processingProgress: 0.5,
+                    completion: 1
+                ) == 0 &&
+                VoiceOrbMotion.processingRippleOffset(
+                    radialDistance: 0,
+                    processingProgress: 0,
+                    completion: 0
+                ) == 0,
+            "processing sends one radial wave through the cloud before release"
         )
         expect(
             VoiceOrbMotion.processingMinimumDwell == 0.32 &&
@@ -172,12 +175,6 @@ private enum VoiceOrbConfigurationTests {
                 VoiceOrbMotion.materializationAlpha(1, seed: 0.5) == 1,
             "particles materialize with deterministic staggered opacity"
         )
-        expect(
-            VoiceOrbMotion.baseRadius == 70 &&
-                VoiceOrbMotion.voiceRadiusGrowth == 15,
-            "the orb keeps its enlarged shared visual footprint"
-        )
-
         let visibleFrame = CGRect(x: 100, y: 40, width: 1_200, height: 800)
         let frame = VoiceOrbLayout.frame(in: visibleFrame)
         expect(frame.size == VoiceOrbLayout.size, "orb uses its fixed panel size")
