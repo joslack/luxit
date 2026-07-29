@@ -100,6 +100,38 @@ private enum VoiceAnimationFilterTests {
             recoveredVoice.level > settledHoldFrame.level * 2,
             "broad nearby speech should reopen the gate over hold music"
         )
+
+        let hvacFilter = VoiceAnimationFilter()
+        _ = hvacFilter.process(
+            level: 0,
+            spectrum: Array(repeating: 0, count: 23)
+        )
+        let hvacSpectrum = multiFormantSpectrum(
+            bands: [2, 3, 4, 8, 12, 17, 20],
+            amplitude: 0.7
+        )
+        let firstHVACFrame = hvacFilter.process(
+            level: 0.018,
+            spectrum: hvacSpectrum
+        )
+        let settledHVACFrame = hvacFilter.process(
+            level: 0.018,
+            spectrum: hvacSpectrum
+        )
+        expect(
+            settledHVACFrame.level < firstHVACFrame.level * 0.2,
+            "a loud stationary A/C should become the recording noise baseline"
+        )
+
+        hvacFilter.reset()
+        let recapturedHVACFrame = hvacFilter.process(
+            level: 0.018,
+            spectrum: hvacSpectrum
+        )
+        expect(
+            recapturedHVACFrame.level > settledHVACFrame.level,
+            "a new recording should recapture the current room baseline"
+        )
         print("VoiceAnimationFilterTests passed")
     }
 

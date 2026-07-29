@@ -22,6 +22,7 @@ char * ew_whisper_transcribe(
 char * ew_parakeet_transcribe(
     void * context,
     const char * wav_path,
+    const char * vad_model_path,
     int n_threads
 );
 void ew_whisper_string_free(char * value);

@@ -422,6 +422,30 @@ static int vad_has_speech(
     return has_speech;
 }
 
+static int recording_has_speech(
+    const char * vad_model_path,
+    const float * samples,
+    int sample_count
+) {
+    int has_speech = vad_has_speech(
+        vad_model_path,
+        samples,
+        sample_count,
+        0.60f
+    );
+    // A second independent pass at a more permissive threshold protects
+    // quiet real speech without ever reusing recurrent VAD state.
+    if (has_speech == 0) {
+        has_speech = vad_has_speech(
+            vad_model_path,
+            samples,
+            sample_count,
+            0.35f
+        );
+    }
+    return has_speech;
+}
+
 char * ew_whisper_transcribe(
     void * raw_context,
     const char * wav_path,
@@ -442,22 +466,11 @@ char * ew_whisper_transcribe(
     }
 
     if (vad_model_path && vad_model_path[0]) {
-        int has_speech = vad_has_speech(
+        const int has_speech = recording_has_speech(
             vad_model_path,
             samples,
-            sample_count,
-            0.60f
+            sample_count
         );
-        // A second independent pass at a more permissive threshold protects
-        // quiet real speech without ever reusing recurrent VAD state.
-        if (has_speech == 0) {
-            has_speech = vad_has_speech(
-                vad_model_path,
-                samples,
-                sample_count,
-                0.35f
-            );
-        }
         if (has_speech < 0) {
             free(samples);
             return NULL;
@@ -529,6 +542,7 @@ char * ew_whisper_transcribe(
 char * ew_parakeet_transcribe(
     void * raw_context,
     const char * wav_path,
+    const char * vad_model_path,
     int n_threads
 ) {
     ew_error[0] = '\0';
@@ -547,6 +561,21 @@ char * ew_parakeet_transcribe(
         free(samples);
         set_error("No PCM samples found in audio path.");
         return NULL;
+    }
+    if (vad_model_path && vad_model_path[0]) {
+        const int has_speech = recording_has_speech(
+            vad_model_path,
+            samples,
+            sample_count
+        );
+        if (has_speech < 0) {
+            free(samples);
+            return NULL;
+        }
+        if (!has_speech) {
+            free(samples);
+            return (char *) calloc(1, 1);
+        }
     }
 
     const int threads = (n_threads > 0) ? n_threads : 4;

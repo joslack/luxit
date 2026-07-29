@@ -623,6 +623,7 @@ private final class EdgeIndicator {
         }
         ensureCurrentScreens()
         if state == .recording && previousState != .recording {
+            voiceAnimationFilter.reset()
             currentAudioLevel = 0
             currentAudioProfile = Array(repeating: 0, count: 23)
             orbMotionPhase = 0
@@ -2029,7 +2030,6 @@ private final class ParakeetEngine: TranscriptionBackend {
         prompt: String,
         completion: @escaping (Result<String, Error>) -> Void
     ) {
-        _ = vadModelURL
         _ = prompt
         queue.async {
             self.unloadWorkItem?.cancel()
@@ -2046,11 +2046,14 @@ private final class ParakeetEngine: TranscriptionBackend {
             }
 
             let pointer = wavURL.path.withCString { wavPath in
-                ew_parakeet_transcribe(
-                    context,
-                    wavPath,
-                    Int32(self.threads)
-                )
+                vadModelURL.path.withCString { vadPath in
+                    ew_parakeet_transcribe(
+                        context,
+                        wavPath,
+                        vadPath,
+                        Int32(self.threads)
+                    )
+                }
             }
             guard let pointer else {
                 let message = String(cString: ew_whisper_last_error())
