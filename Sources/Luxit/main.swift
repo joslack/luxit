@@ -913,20 +913,11 @@ private final class EdgeIndicator {
                 level: level,
                 spectrum: spectrum
             )
-            // Typical conversational RMS is only around 0.01–0.04. Map that
-            // useful range across the visualizer instead of treating it as
-            // the bottom few percent of a theoretical full-scale signal.
-            let noiseFloor: Float = 0.0035
-            let speechCeiling: Float = 0.045
-            let normalized = max(
-                0,
-                min(
-                    1,
-                    (conditioned.level - noiseFloor) /
-                        (speechCeiling - noiseFloor)
+            let target = CGFloat(
+                VoiceAnimationFilter.visualResponse(
+                    for: conditioned.level
                 )
             )
-            let target = CGFloat(pow(normalized, 0.52))
             let responsiveness: CGFloat =
                 target > self.currentAudioLevel ? 0.72 : 0.28
             self.currentAudioLevel +=

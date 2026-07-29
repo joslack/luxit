@@ -151,6 +151,20 @@ private enum VoiceAnimationFilterTests {
             voiceOverHVACFrame.level > settledHVACFrame.level,
             "speech above the calibrated A/C should still animate the orb"
         )
+        expect(
+            VoiceAnimationFilter.visualResponse(
+                for: settledHVACFrame.level
+            ) == 0 &&
+                VoiceAnimationFilter.visualResponse(
+                    for: voiceOverHVACFrame.level
+                ) > 0.2,
+            "post-gate mapping should boost voice without reviving HVAC"
+        )
+        expect(
+            VoiceAnimationFilter.visualResponse(for: 0.0024) == 0 &&
+                VoiceAnimationFilter.visualResponse(for: 0.040) == 1,
+            "visual voice response should preserve its silent and full endpoints"
+        )
         print("VoiceAnimationFilterTests passed")
     }
 

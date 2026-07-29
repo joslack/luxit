@@ -14,6 +14,8 @@ struct VoiceAnimationFrame {
 /// stationary energy while preserving changing voice/formant energy.
 final class VoiceAnimationFilter {
     static let calibrationFrameCount = 3
+    private static let visualNoiseFloor: Float = 0.0024
+    private static let visualSpeechCeiling: Float = 0.040
 
     private var noiseEstimate: [Float] = []
     private var hasNoiseBaseline = false
@@ -156,6 +158,18 @@ final class VoiceAnimationFilter {
             spectrum: filtered.map { $0 * tonalGate },
             voiceConfidence: confidence
         )
+    }
+
+    static func visualResponse(for conditionedLevel: Float) -> Float {
+        let normalized = clamp(
+            (conditionedLevel - visualNoiseFloor) /
+                (visualSpeechCeiling - visualNoiseFloor)
+        )
+        // The classifier has already removed stationary background here. Use
+        // a slightly expansive curve so quiet accepted speech still produces
+        // a clear response without reintroducing motion for zero-confidence
+        // room noise.
+        return pow(normalized, 0.48)
     }
 
     private static func voiceWeight(
