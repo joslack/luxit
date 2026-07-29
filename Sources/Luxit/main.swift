@@ -623,7 +623,7 @@ private final class EdgeIndicator {
         }
         ensureCurrentScreens()
         if state == .recording && previousState != .recording {
-            voiceAnimationFilter.reset()
+            voiceAnimationFilter.beginRecording()
             currentAudioLevel = 0
             currentAudioProfile = Array(repeating: 0, count: 23)
             orbMotionPhase = 0

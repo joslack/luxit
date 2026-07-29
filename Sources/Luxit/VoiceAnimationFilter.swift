@@ -13,14 +13,18 @@ struct VoiceAnimationFrame {
 /// hiss. A persistent, slowly adapting per-band noise estimate then subtracts
 /// stationary energy while preserving changing voice/formant energy.
 final class VoiceAnimationFilter {
+    static let calibrationFrameCount = 8
+
     private var noiseEstimate: [Float] = []
     private var hasNoiseBaseline = false
     private var tonalBackground: Float = 0
+    private var calibrationFramesRemaining = 0
 
-    func reset() {
+    func beginRecording() {
         noiseEstimate = []
         hasNoiseBaseline = false
         tonalBackground = 0
+        calibrationFramesRemaining = Self.calibrationFrameCount
     }
 
     func process(level: Float, spectrum: [Float]) -> VoiceAnimationFrame {
@@ -36,6 +40,7 @@ final class VoiceAnimationFilter {
             hasNoiseBaseline = false
         }
 
+        let isCalibrating = calibrationFramesRemaining > 0
         let quietEnoughToLearn = level < 0.007
         let hadNoiseBaseline = hasNoiseBaseline
         var totalEnergy: Float = 0
@@ -52,7 +57,15 @@ final class VoiceAnimationFilter {
             totalEnergy += current
             voiceWeightedEnergy += current * weight
 
-            if !hadNoiseBaseline {
+            if isCalibrating {
+                // HVAC energy fluctuates even though it sounds stationary.
+                // Keep the strongest observed value in each band during the
+                // short materialization window so those fluctuations become
+                // part of the room baseline instead of animating the orb.
+                noiseEstimate[index] = hadNoiseBaseline
+                    ? max(noiseEstimate[index], current)
+                    : current
+            } else if !hadNoiseBaseline {
                 // Capture the room on the first microphone frame even when a
                 // nearby fan or A/C is louder than the ordinary quiet limit.
                 // The first frame remains visible below; only later stationary
@@ -72,7 +85,7 @@ final class VoiceAnimationFilter {
                     (current - noiseEstimate[index]) * rate
             }
 
-            let residual = hadNoiseBaseline
+            let residual = hadNoiseBaseline && !isCalibrating
                 ? max(0, current - noiseEstimate[index] * 1.12)
                 : current
             filtered[index] = residual * weight
@@ -87,6 +100,14 @@ final class VoiceAnimationFilter {
             )
         }
         hasNoiseBaseline = true
+        if isCalibrating {
+            calibrationFramesRemaining -= 1
+            return VoiceAnimationFrame(
+                level: 0,
+                spectrum: filtered.map { _ in 0 },
+                voiceConfidence: 0
+            )
+        }
         let voiceBandFraction = voiceWeightedEnergy / totalEnergy
         let bandConfidence = Self.clamp(
             (voiceBandFraction - 0.28) / 0.58
@@ -95,7 +116,7 @@ final class VoiceAnimationFilter {
             residualEnergy / max(voiceWeightedEnergy, 0.000_000_1)
         )
         let stationaryConfidence: Float = hasNoiseBaseline
-            ? 0.08 + residualFraction * 0.92
+            ? residualFraction
             : 1
         let spectralPeakShare =
             (filtered.max() ?? 0) / max(residualEnergy, 0.000_000_1)

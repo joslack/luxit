@@ -102,6 +102,7 @@ private enum VoiceAnimationFilterTests {
         )
 
         let hvacFilter = VoiceAnimationFilter()
+        hvacFilter.beginRecording()
         _ = hvacFilter.process(
             level: 0,
             spectrum: Array(repeating: 0, count: 23)
@@ -110,27 +111,39 @@ private enum VoiceAnimationFilterTests {
             bands: [2, 3, 4, 8, 12, 17, 20],
             amplitude: 0.7
         )
-        let firstHVACFrame = hvacFilter.process(
-            level: 0.018,
-            spectrum: hvacSpectrum
-        )
+        for frame in 0..<VoiceAnimationFilter.calibrationFrameCount {
+            let fluctuation = Float(frame % 3) * 0.08
+            let calibrationSpectrum = hvacSpectrum.map {
+                $0 * (1 + fluctuation)
+            }
+            let calibrationFrame = hvacFilter.process(
+                level: 0.018 + fluctuation * 0.01,
+                spectrum: calibrationSpectrum
+            )
+            expect(
+                calibrationFrame.level == 0,
+                "ambient calibration should stay inside materialization"
+            )
+        }
         let settledHVACFrame = hvacFilter.process(
             level: 0.018,
             spectrum: hvacSpectrum
         )
         expect(
-            settledHVACFrame.level < firstHVACFrame.level * 0.2,
-            "a loud stationary A/C should become the recording noise baseline"
+            settledHVACFrame.level == 0,
+            "a fluctuating A/C should remain below its calibrated band peaks"
         )
 
-        hvacFilter.reset()
-        let recapturedHVACFrame = hvacFilter.process(
-            level: 0.018,
-            spectrum: hvacSpectrum
+        let voiceOverHVAC = hvacSpectrum.enumerated().map { index, energy in
+            energy + ([7, 11, 15].contains(index) ? 1.4 : 0)
+        }
+        let voiceOverHVACFrame = hvacFilter.process(
+            level: 0.028,
+            spectrum: voiceOverHVAC
         )
         expect(
-            recapturedHVACFrame.level > settledHVACFrame.level,
-            "a new recording should recapture the current room baseline"
+            voiceOverHVACFrame.level > settledHVACFrame.level,
+            "speech above the calibrated A/C should still animate the orb"
         )
         print("VoiceAnimationFilterTests passed")
     }
