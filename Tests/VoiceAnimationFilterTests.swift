@@ -100,6 +100,71 @@ private enum VoiceAnimationFilterTests {
             recoveredVoice.level > settledHoldFrame.level * 2,
             "broad nearby speech should reopen the gate over hold music"
         )
+
+        let hvacFilter = VoiceAnimationFilter()
+        hvacFilter.beginRecording()
+        _ = hvacFilter.process(
+            level: 0,
+            spectrum: Array(repeating: 0, count: 23)
+        )
+        let hvacSpectrum = multiFormantSpectrum(
+            bands: [2, 3, 4, 8, 12, 17, 20],
+            amplitude: 0.7
+        )
+        for frame in 0..<VoiceAnimationFilter.calibrationFrameCount {
+            let fluctuation = Float(frame % 3) * 0.08
+            let calibrationSpectrum = hvacSpectrum.enumerated().map {
+                index, energy in
+                let earlyVoice: Float =
+                    frame == VoiceAnimationFilter.calibrationFrameCount - 1 &&
+                    [7, 11, 15].contains(index)
+                        ? 1.4
+                        : 0
+                return energy * (1 + fluctuation) + earlyVoice
+            }
+            let calibrationFrame = hvacFilter.process(
+                level: 0.018 + fluctuation * 0.01,
+                spectrum: calibrationSpectrum
+            )
+            expect(
+                calibrationFrame.level == 0,
+                "ambient calibration should stay inside materialization"
+            )
+        }
+        let settledHVACFrame = hvacFilter.process(
+            level: 0.018,
+            spectrum: hvacSpectrum
+        )
+        expect(
+            settledHVACFrame.level == 0,
+            "a fluctuating A/C should remain below its calibrated band peaks"
+        )
+
+        let voiceOverHVAC = hvacSpectrum.enumerated().map { index, energy in
+            energy + ([7, 11, 15].contains(index) ? 1.4 : 0)
+        }
+        let voiceOverHVACFrame = hvacFilter.process(
+            level: 0.028,
+            spectrum: voiceOverHVAC
+        )
+        expect(
+            voiceOverHVACFrame.level > settledHVACFrame.level,
+            "speech above the calibrated A/C should still animate the orb"
+        )
+        expect(
+            VoiceAnimationFilter.visualResponse(
+                for: settledHVACFrame.level
+            ) == 0 &&
+                VoiceAnimationFilter.visualResponse(
+                    for: voiceOverHVACFrame.level
+                ) > 0.2,
+            "post-gate mapping should boost voice without reviving HVAC"
+        )
+        expect(
+            VoiceAnimationFilter.visualResponse(for: 0.0024) == 0 &&
+                VoiceAnimationFilter.visualResponse(for: 0.040) == 1,
+            "visual voice response should preserve its silent and full endpoints"
+        )
         print("VoiceAnimationFilterTests passed")
     }
 

@@ -13,9 +13,23 @@ struct VoiceAnimationFrame {
 /// hiss. A persistent, slowly adapting per-band noise estimate then subtracts
 /// stationary energy while preserving changing voice/formant energy.
 final class VoiceAnimationFilter {
+    static let calibrationFrameCount = 3
+    private static let visualNoiseFloor: Float = 0.0024
+    private static let visualSpeechCeiling: Float = 0.040
+
     private var noiseEstimate: [Float] = []
     private var hasNoiseBaseline = false
     private var tonalBackground: Float = 0
+    private var calibrationFramesRemaining = 0
+    private var calibrationFramesObserved = 0
+
+    func beginRecording() {
+        noiseEstimate = []
+        hasNoiseBaseline = false
+        tonalBackground = 0
+        calibrationFramesRemaining = Self.calibrationFrameCount
+        calibrationFramesObserved = 0
+    }
 
     func process(level: Float, spectrum: [Float]) -> VoiceAnimationFrame {
         guard !spectrum.isEmpty else {
@@ -30,7 +44,9 @@ final class VoiceAnimationFilter {
             hasNoiseBaseline = false
         }
 
+        let isCalibrating = calibrationFramesRemaining > 0
         let quietEnoughToLearn = level < 0.007
+        let hadNoiseBaseline = hasNoiseBaseline
         var totalEnergy: Float = 0
         var voiceWeightedEnergy: Float = 0
         var residualEnergy: Float = 0
@@ -45,15 +61,26 @@ final class VoiceAnimationFilter {
             totalEnergy += current
             voiceWeightedEnergy += current * weight
 
-            if quietEnoughToLearn {
-                if !hasNoiseBaseline {
-                    noiseEstimate[index] = current
-                } else {
-                    let rate: Float =
-                        current < noiseEstimate[index] ? 0.16 : 0.035
-                    noiseEstimate[index] +=
-                        (current - noiseEstimate[index]) * rate
-                }
+            if isCalibrating {
+                // Average a few frames rather than retaining their peaks. This
+                // captures turbulent HVAC energy without absorbing the start
+                // of the user's first word into the room baseline.
+                let observed = Float(calibrationFramesObserved + 1)
+                noiseEstimate[index] = calibrationFramesObserved == 0
+                    ? current
+                    : noiseEstimate[index] +
+                        (current - noiseEstimate[index]) / observed
+            } else if !hadNoiseBaseline {
+                // Capture the room on the first microphone frame even when a
+                // nearby fan or A/C is louder than the ordinary quiet limit.
+                // The first frame remains visible below; only later stationary
+                // energy is subtracted.
+                noiseEstimate[index] = current
+            } else if quietEnoughToLearn {
+                let rate: Float =
+                    current < noiseEstimate[index] ? 0.16 : 0.035
+                noiseEstimate[index] +=
+                    (current - noiseEstimate[index]) * rate
             } else if hasNoiseBaseline {
                 // Track a falling noise floor quickly but never absorb speech
                 // into the baseline during an active utterance.
@@ -63,20 +90,27 @@ final class VoiceAnimationFilter {
                     (current - noiseEstimate[index]) * rate
             }
 
-            let residual = hasNoiseBaseline
+            let residual = hadNoiseBaseline && !isCalibrating
                 ? max(0, current - noiseEstimate[index] * 1.12)
                 : current
             filtered[index] = residual * weight
             residualEnergy += filtered[index]
-        }
-        if quietEnoughToLearn {
-            hasNoiseBaseline = true
         }
 
         guard totalEnergy > 0.000_000_1 else {
             return VoiceAnimationFrame(
                 level: 0,
                 spectrum: filtered,
+                voiceConfidence: 0
+            )
+        }
+        hasNoiseBaseline = true
+        if isCalibrating {
+            calibrationFramesObserved += 1
+            calibrationFramesRemaining -= 1
+            return VoiceAnimationFrame(
+                level: 0,
+                spectrum: filtered.map { _ in 0 },
                 voiceConfidence: 0
             )
         }
@@ -88,7 +122,7 @@ final class VoiceAnimationFilter {
             residualEnergy / max(voiceWeightedEnergy, 0.000_000_1)
         )
         let stationaryConfidence: Float = hasNoiseBaseline
-            ? 0.08 + residualFraction * 0.92
+            ? residualFraction
             : 1
         let spectralPeakShare =
             (filtered.max() ?? 0) / max(residualEnergy, 0.000_000_1)
@@ -124,6 +158,18 @@ final class VoiceAnimationFilter {
             spectrum: filtered.map { $0 * tonalGate },
             voiceConfidence: confidence
         )
+    }
+
+    static func visualResponse(for conditionedLevel: Float) -> Float {
+        let normalized = clamp(
+            (conditionedLevel - visualNoiseFloor) /
+                (visualSpeechCeiling - visualNoiseFloor)
+        )
+        // The classifier has already removed stationary background here. Use
+        // a slightly expansive curve so quiet accepted speech still produces
+        // a clear response without reintroducing motion for zero-confidence
+        // room noise.
+        return pow(normalized, 0.48)
     }
 
     private static func voiceWeight(

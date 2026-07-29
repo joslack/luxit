@@ -623,6 +623,7 @@ private final class EdgeIndicator {
         }
         ensureCurrentScreens()
         if state == .recording && previousState != .recording {
+            voiceAnimationFilter.beginRecording()
             currentAudioLevel = 0
             currentAudioProfile = Array(repeating: 0, count: 23)
             orbMotionPhase = 0
@@ -912,20 +913,11 @@ private final class EdgeIndicator {
                 level: level,
                 spectrum: spectrum
             )
-            // Typical conversational RMS is only around 0.01–0.04. Map that
-            // useful range across the visualizer instead of treating it as
-            // the bottom few percent of a theoretical full-scale signal.
-            let noiseFloor: Float = 0.0035
-            let speechCeiling: Float = 0.045
-            let normalized = max(
-                0,
-                min(
-                    1,
-                    (conditioned.level - noiseFloor) /
-                        (speechCeiling - noiseFloor)
+            let target = CGFloat(
+                VoiceAnimationFilter.visualResponse(
+                    for: conditioned.level
                 )
             )
-            let target = CGFloat(pow(normalized, 0.52))
             let responsiveness: CGFloat =
                 target > self.currentAudioLevel ? 0.72 : 0.28
             self.currentAudioLevel +=
@@ -1037,7 +1029,13 @@ private final class EdgeIndicator {
         panel.isOpaque = false
         panel.hasShadow = false
         panel.ignoresMouseEvents = true
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+        panel.collectionBehavior = [
+            .canJoinAllSpaces,
+            .canJoinAllApplications,
+            .fullScreenAuxiliary,
+            .stationary,
+            .ignoresCycle
+        ]
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
         panel.contentView = indicatorView
@@ -2029,7 +2027,6 @@ private final class ParakeetEngine: TranscriptionBackend {
         prompt: String,
         completion: @escaping (Result<String, Error>) -> Void
     ) {
-        _ = vadModelURL
         _ = prompt
         queue.async {
             self.unloadWorkItem?.cancel()
@@ -2046,11 +2043,14 @@ private final class ParakeetEngine: TranscriptionBackend {
             }
 
             let pointer = wavURL.path.withCString { wavPath in
-                ew_parakeet_transcribe(
-                    context,
-                    wavPath,
-                    Int32(self.threads)
-                )
+                vadModelURL.path.withCString { vadPath in
+                    ew_parakeet_transcribe(
+                        context,
+                        wavPath,
+                        vadPath,
+                        Int32(self.threads)
+                    )
+                }
             }
             guard let pointer else {
                 let message = String(cString: ew_whisper_last_error())

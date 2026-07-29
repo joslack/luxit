@@ -7,7 +7,8 @@ static int run_profile(
     const char * label,
     int use_gpu,
     const char * model_path,
-    const char * wav_path
+    const char * wav_path,
+    const char * vad_model_path
 ) {
     void * context = ew_parakeet_load(
         model_path,
@@ -20,7 +21,12 @@ static int run_profile(
         return 0;
     }
 
-    char * text = ew_parakeet_transcribe(context, wav_path, 4);
+    char * text = ew_parakeet_transcribe(
+        context,
+        wav_path,
+        vad_model_path,
+        4
+    );
     if (!text) {
         fprintf(stderr, "transcribe: %s\n", ew_whisper_last_error());
         ew_parakeet_free(context);
@@ -34,14 +40,18 @@ static int run_profile(
 }
 
 int main(int argc, char ** argv) {
-    if (argc != 4) {
-        fprintf(stderr, "usage: %s metal|cpu|sequence MODEL WAV\n", argv[0]);
+    if (argc != 5) {
+        fprintf(
+            stderr,
+            "usage: %s metal|cpu|sequence MODEL WAV VAD_MODEL\n",
+            argv[0]
+        );
         return 2;
     }
 
     if (argv[1][0] == 's') {
-        if (!run_profile("cpu", 0, argv[2], argv[3])) return 1;
-        if (!run_profile("metal", 1, argv[2], argv[3])) return 1;
+        if (!run_profile("cpu", 0, argv[2], argv[3], argv[4])) return 1;
+        if (!run_profile("metal", 1, argv[2], argv[3], argv[4])) return 1;
         return 0;
     }
 
@@ -49,6 +59,7 @@ int main(int argc, char ** argv) {
         argv[1],
         argv[1][0] == 'm',
         argv[2],
-        argv[3]
+        argv[3],
+        argv[4]
     ) ? 0 : 1;
 }
