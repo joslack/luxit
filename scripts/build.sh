@@ -44,7 +44,9 @@ swiftc \
   -framework AppKit \
   -framework ApplicationServices \
   -framework Accelerate \
+  -framework AudioToolbox \
   -framework AVFoundation \
+  -framework CoreAudio \
   -framework IOKit \
   -framework Metal \
   -framework MetalKit \
@@ -60,6 +62,7 @@ swiftc \
   -lggml \
   -lggml-base \
   "$project_dir/Sources/Luxit/CapsLockEventLogic.swift" \
+  "$project_dir/Sources/Luxit/AudioInputDevice.swift" \
   "$project_dir/Sources/Luxit/LogSpectrumAnalyzer.swift" \
   "$project_dir/Sources/Luxit/VoiceAnimationFilter.swift" \
   "$project_dir/Sources/Luxit/VoiceOrbGeometry.swift" \
