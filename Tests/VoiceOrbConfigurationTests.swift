@@ -15,15 +15,52 @@ private func expect(
 private enum VoiceOrbConfigurationTests {
     static func main() {
         expect(
-            VoiceOrbMotion.speedScale == 1.08 &&
-                VoiceOrbMotion.currentScale == 0.86 &&
-                VoiceOrbMotion.jitterScale == 0.58 &&
+            VoiceOrbMotion.speedScale == 0.96 &&
+                VoiceOrbMotion.currentScale == 0.72 &&
+                VoiceOrbMotion.jitterScale == 0.28 &&
                 VoiceOrbMotion.spatialScale == 1.08 &&
-                VoiceOrbMotion.voiceResponseScale == 1.65 &&
+                VoiceOrbMotion.turbulenceScale == 0.38 &&
+                VoiceOrbMotion.voiceResponseScale == 0.92 &&
                 VoiceOrbMotion.idleVisualFloor == 0.12 &&
                 VoiceOrbMotion.baseRadius == 78 &&
                 VoiceOrbMotion.voiceRadiusGrowth == 10,
-            "the sole orb motion remains the attractor behavior"
+            "the ripple study keeps a calm underlying particle current"
+        )
+        let quietRipple = VoiceOrbMotion.voiceRippleOffset(
+            radialDistance: 0.58,
+            phase: 0.7,
+            level: VoiceOrbMotion.idleVisualFloor,
+            intensity: 0.8,
+            driftScale: 1
+        )
+        let speakingRipple = VoiceOrbMotion.voiceRippleOffset(
+            radialDistance: 0.58,
+            phase: 0.7,
+            level: 0.8,
+            intensity: 0.8,
+            driftScale: 1
+        )
+        let repeatedRipple = VoiceOrbMotion.voiceRippleOffset(
+            radialDistance: 0.58,
+            phase: 0.7,
+            level: 0.8,
+            intensity: 0.8,
+            driftScale: 1
+        )
+        let neighboringRipple = VoiceOrbMotion.voiceRippleOffset(
+            radialDistance: 0.72,
+            phase: 0.7,
+            level: 0.8,
+            intensity: 0.8,
+            driftScale: 1
+        )
+        expect(
+            quietRipple == 0 &&
+                speakingRipple == repeatedRipple &&
+                speakingRipple != neighboringRipple &&
+                abs(speakingRipple) <=
+                    VoiceOrbMotion.voiceRippleAmplitude * 1.22,
+            "speech launches bounded deterministic waves through the cloud"
         )
         expect(
             VoiceOrbMotion.minimumParticleRadius == 0.55 &&

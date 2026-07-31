@@ -1,11 +1,17 @@
 import CoreGraphics
 
 enum VoiceOrbMotion {
-    static let speedScale: CGFloat = 1.08
-    static let currentScale: CGFloat = 0.86
-    static let jitterScale: CGFloat = 0.58
+    static let speedScale: CGFloat = 0.96
+    static let currentScale: CGFloat = 0.72
+    static let jitterScale: CGFloat = 0.28
     static let spatialScale: CGFloat = 1.08
-    static let voiceResponseScale: CGFloat = 1.65
+    static let turbulenceScale: CGFloat = 0.38
+    static let voiceResponseScale: CGFloat = 0.92
+    static let voiceRippleAmplitude: CGFloat = 12
+    static let voiceRippleSpatialFrequency: CGFloat = 17.5
+    static let voiceRipplePhaseSpeed: CGFloat = 1.85
+    static let voiceRippleOnset: CGFloat = 0.14
+    static let voiceRippleFullLevel: CGFloat = 0.78
     static let baseRadius: CGFloat = 78
     static let voiceRadiusGrowth: CGFloat = 10
     static let maximumParticleEDRGain: CGFloat = 1.55
@@ -132,6 +138,47 @@ enum VoiceOrbMotion {
             processingRippleAmplitude *
             entrance *
             (1 - clamp(completion))
+    }
+
+    static func voiceRippleOffset(
+        radialDistance: CGFloat,
+        phase: CGFloat,
+        level: CGFloat,
+        intensity: CGFloat,
+        driftScale: CGFloat
+    ) -> CGFloat {
+        let radius = max(0, radialDistance)
+        let voice = smoothstep(
+            voiceRippleOnset,
+            voiceRippleFullLevel,
+            level
+        )
+        guard voice > 0 else { return 0 }
+
+        let carrier =
+            sin(
+                radius * voiceRippleSpatialFrequency -
+                    phase * voiceRipplePhaseSpeed
+            )
+        let harmonic =
+            sin(
+                radius * voiceRippleSpatialFrequency * 0.52 -
+                    phase * voiceRipplePhaseSpeed * 0.63 +
+                    .pi / 3
+            ) * 0.22
+        let centerEntrance = smoothstep(0.04, 0.22, radius)
+        let outerRelease =
+            1 - smoothstep(0.92, 1.34, radius) * 0.18
+        let particleWeight =
+            (0.72 + clamp(intensity) * 0.28) *
+            (0.88 + clamp(driftScale / 1.74) * 0.12)
+
+        return (carrier + harmonic) *
+            voiceRippleAmplitude *
+            voice *
+            centerEntrance *
+            outerRelease *
+            particleWeight
     }
 
     private static func smoothstep(

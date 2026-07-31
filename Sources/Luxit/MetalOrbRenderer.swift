@@ -10,7 +10,7 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
     private weak var view: MTKView?
     private var particleBuffer: MTLBuffer?
     private var particleCount = 0
-    private var uniformValues = [Float](repeating: 0, count: 29)
+    private var uniformValues = [Float](repeating: 0, count: 34)
     private var lastSpectrum: [CGFloat] = []
     private var lastLevel: CGFloat = -1
 
@@ -165,7 +165,7 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
         uniformValues[22] = Float(VoiceOrbMotion.currentScale)
         uniformValues[23] = Float(VoiceOrbMotion.jitterScale)
         uniformValues[24] = Float(VoiceOrbMotion.spatialScale)
-        uniformValues[25] = 1
+        uniformValues[25] = Float(VoiceOrbMotion.turbulenceScale)
         uniformValues[26] = Float(VoiceOrbMotion.voiceResponseScale)
         uniformValues[27] = Float(
             VoiceOrbMotion.materializationFieldRadius(
@@ -180,6 +180,13 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
             availableHeadroom: availableHeadroom
         )
         uniformValues[28] = Float(edrGain)
+        uniformValues[29] = Float(VoiceOrbMotion.voiceRippleAmplitude)
+        uniformValues[30] = Float(
+            VoiceOrbMotion.voiceRippleSpatialFrequency
+        )
+        uniformValues[31] = Float(VoiceOrbMotion.voiceRipplePhaseSpeed)
+        uniformValues[32] = Float(VoiceOrbMotion.voiceRippleOnset)
+        uniformValues[33] = Float(VoiceOrbMotion.voiceRippleFullLevel)
         view?.draw()
     }
 
@@ -389,7 +396,37 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
         float2 radialDirection = radialDistance > 0.0001
             ? rotated / radialDistance
             : float2(0.0);
+        float voiceRippleLevel = smoothstep(u[32], u[33], u[6]);
+        float voiceRippleCarrier = sin(
+            radialDistance * u[30] - u[5] * u[31]
+        );
+        float voiceRippleHarmonic = sin(
+            radialDistance * u[30] * 0.52 -
+                u[5] * u[31] * 0.63 +
+                M_PI_F / 3.0
+        ) * 0.22;
+        float voiceRippleEntrance = smoothstep(
+            0.04,
+            0.22,
+            radialDistance
+        );
+        float voiceRippleRelease =
+            1.0 - smoothstep(0.92, 1.34, radialDistance) * 0.18;
+        float voiceRippleWeight =
+            (0.72 + clamp(intensity, 0.0, 1.0) * 0.28) *
+            (
+                0.88 +
+                clamp(driftScale / 1.74, 0.0, 1.0) * 0.12
+            );
+        float voiceRippleOffset =
+            (voiceRippleCarrier + voiceRippleHarmonic) *
+            u[29] *
+            voiceRippleLevel *
+            voiceRippleEntrance *
+            voiceRippleRelease *
+            voiceRippleWeight;
         settled += radialDirection * rippleOffset;
+        settled += radialDirection * voiceRippleOffset;
         float radialSeed = clamp(
             flowPhaseY / (2.0 * M_PI_F),
             0.0,

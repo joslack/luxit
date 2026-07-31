@@ -441,18 +441,31 @@ private final class EdgeIndicatorView: NSView {
                 rotatedX / safeRadialDistance * rippleOffset
             let rippleY =
                 rotatedY / safeRadialDistance * rippleOffset
+            let voiceRippleOffset = VoiceOrbMotion.voiceRippleOffset(
+                radialDistance: radialDistance,
+                phase: animationPhase,
+                level: displayLevel,
+                intensity: point.intensity,
+                driftScale: point.driftScale
+            )
+            let voiceRippleX =
+                rotatedX / safeRadialDistance * voiceRippleOffset
+            let voiceRippleY =
+                rotatedY / safeRadialDistance * voiceRippleOffset
             let settledX =
                 rotatedX * baseRadius +
                 flowX +
-                attractorX +
+                attractorX * VoiceOrbMotion.turbulenceScale +
                 noiseX +
-                rippleX
+                rippleX +
+                voiceRippleX
             let settledY =
                 rotatedY * baseRadius +
                 flowY +
-                attractorY +
+                attractorY * VoiceOrbMotion.turbulenceScale +
                 noiseY +
-                rippleY
+                rippleY +
+                voiceRippleY
             let radialSeed = max(
                 0,
                 min(1, point.flowPhaseY / (2 * .pi))
