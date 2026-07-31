@@ -70,6 +70,20 @@ swiftc \
   -sdk "$sdk_path" \
   -target arm64-apple-macosx26.0 \
   -module-cache-path "$module_cache" \
+  -framework AudioToolbox \
+  -framework AVFoundation \
+  -framework CoreAudio \
+  "$project_dir/Sources/Luxit/AudioInputDevice.swift" \
+  "$project_dir/Tests/AudioInputDeviceTests.swift" \
+  -o "$build_dir/AudioInputDeviceTests"
+
+"$build_dir/AudioInputDeviceTests"
+
+swiftc \
+  -swift-version 5 \
+  -sdk "$sdk_path" \
+  -target arm64-apple-macosx26.0 \
+  -module-cache-path "$module_cache" \
   "$project_dir/Sources/Luxit/VoiceOrbGeometry.swift" \
   "$project_dir/Tests/VoiceOrbGeometryTests.swift" \
   -o "$build_dir/VoiceOrbGeometryTests"

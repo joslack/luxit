@@ -1336,10 +1336,11 @@ private struct RecordedAudio {
 }
 
 private final class AudioRecorder {
-    private let engine = AVAudioEngine()
+    private var engine = AVAudioEngine()
     private let spectrumAnalyzer = LogSpectrumAnalyzer()
     private let metricsLock = NSLock()
     private let speechLevelThreshold: Float = 0.006
+    private var routeTracker = AudioInputRouteTracker()
     private var file: AVAudioFile?
     private var recordingURL: URL?
     private var startedAt: Date?
@@ -1357,20 +1358,49 @@ private final class AudioRecorder {
             return
         }
         let beganAt = CACurrentMediaTime()
-        _ = engine.inputNode.outputFormat(forBus: 0)
-        engine.prepare()
-        isPrepared = true
-        DiagnosticLog.write(
-            String(
-                format: "Audio engine prepared ahead of first press in %.3fs",
-                CACurrentMediaTime() - beganAt
+        do {
+            let device = try SystemAudioInput.currentDevice()
+            let input = engine.inputNode
+            try SystemAudioInput.bind(input, to: device)
+            _ = input.outputFormat(forBus: 0)
+            engine.prepare()
+            routeTracker.markPrepared(for: device.id)
+            isPrepared = true
+            DiagnosticLog.write(
+                String(
+                    format: "Audio engine prepared input=%@ id=%u in %.3fs",
+                    device.name,
+                    device.id,
+                    CACurrentMediaTime() - beganAt
+                )
             )
-        )
+        } catch {
+            routeTracker.invalidate()
+            isPrepared = false
+            DiagnosticLog.write(
+                "Audio engine prewarm deferred: \(error.localizedDescription)"
+            )
+        }
     }
 
     func start(level: @escaping (Float, [Float]) -> Void) throws {
         let beganAt = CACurrentMediaTime()
+        let device = try SystemAudioInput.currentDevice()
+        if routeTracker.requiresEngineReplacement(for: device.id) {
+            let previousDeviceID = routeTracker.preparedDeviceID
+            engine.stop()
+            engine.reset()
+            engine = AVAudioEngine()
+            routeTracker.invalidate()
+            isPrepared = false
+            DiagnosticLog.write(
+                "Audio input changed id=\(previousDeviceID ?? 0)->\(device.id); " +
+                "rebuilt recorder"
+            )
+        }
+
         let input = engine.inputNode
+        try SystemAudioInput.bind(input, to: device)
         let format = input.outputFormat(forBus: 0)
         guard format.sampleRate > 0, format.channelCount > 0 else {
             throw NSError(
@@ -1429,10 +1459,16 @@ private final class AudioRecorder {
         do {
             try engine.start()
             startedAt = Date()
+            routeTracker.markPrepared(for: device.id)
             isPrepared = true
             DiagnosticLog.write(
                 String(
-                    format: "Audio recorder ready latency=%.3fs",
+                    format: "Audio recorder ready input=%@ id=%u rate=%.0fHz " +
+                        "channels=%u latency=%.3fs",
+                    device.name,
+                    device.id,
+                    format.sampleRate,
+                    format.channelCount,
                     CACurrentMediaTime() - beganAt
                 )
             )
