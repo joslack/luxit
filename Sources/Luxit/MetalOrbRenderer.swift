@@ -13,6 +13,7 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
     private var uniformValues = [Float](repeating: 0, count: 29)
     private var lastSpectrum: [CGFloat] = []
     private var lastLevel: CGFloat = -1
+    private var consecutiveDrawableMisses = 0
 
     init?(view: MTKView) {
         guard
@@ -211,9 +212,24 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
     func draw(in view: MTKView) {
         guard
             particleCount > 0,
-            let particleBuffer,
+            let particleBuffer
+        else {
+            return
+        }
+        guard
             let descriptor = view.currentRenderPassDescriptor,
-            let drawable = view.currentDrawable,
+            let drawable = view.currentDrawable
+        else {
+            consecutiveDrawableMisses += 1
+            if consecutiveDrawableMisses == 3 {
+                DiagnosticLog.write(
+                    "Metal orb drawable unavailable; reasserting overlay panel"
+                )
+                view.window?.orderFrontRegardless()
+            }
+            return
+        }
+        guard
             let commandBuffer = commandQueue.makeCommandBuffer(),
             let encoder = commandBuffer.makeRenderCommandEncoder(
                 descriptor: descriptor
@@ -221,6 +237,7 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
         else {
             return
         }
+        consecutiveDrawableMisses = 0
         encoder.setRenderPipelineState(pipeline)
         encoder.setVertexBuffer(particleBuffer, offset: 0, index: 0)
         uniformValues.withUnsafeBytes { bytes in
