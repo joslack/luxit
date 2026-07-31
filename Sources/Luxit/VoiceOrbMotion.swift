@@ -1,7 +1,8 @@
 import CoreGraphics
 
 enum VoiceOrbMotion {
-    static let speedScale: CGFloat = 0.96
+    static let speedScale: CGFloat = 1.06
+    static let rotationScale: CGFloat = 0.17
     static let currentScale: CGFloat = 0.72
     static let jitterScale: CGFloat = 0.28
     static let spatialScale: CGFloat = 1.08
@@ -9,7 +10,7 @@ enum VoiceOrbMotion {
     static let voiceResponseScale: CGFloat = 0.92
     static let voiceRippleAmplitude: CGFloat = 12
     static let voiceRippleSpatialFrequency: CGFloat = 17.5
-    static let voiceRipplePhaseSpeed: CGFloat = 1.85
+    static let voiceRipplePhaseSpeed: CGFloat = 2.8
     static let voiceRippleOnset: CGFloat = 0.14
     static let voiceRippleFullLevel: CGFloat = 0.78
     static let baseRadius: CGFloat = 78
@@ -142,6 +143,8 @@ enum VoiceOrbMotion {
 
     static func voiceRippleOffset(
         radialDistance: CGFloat,
+        angle: CGFloat,
+        seed: CGFloat,
         phase: CGFloat,
         level: CGFloat,
         intensity: CGFloat,
@@ -155,17 +158,31 @@ enum VoiceOrbMotion {
         )
         guard voice > 0 else { return 0 }
 
-        let carrier =
-            sin(
-                radius * voiceRippleSpatialFrequency -
-                    phase * voiceRipplePhaseSpeed
-            )
+        let angularWarp =
+            sin(angle * 3 + phase * 0.34) * 0.58 +
+            cos(angle * 5 - phase * 0.21) * 0.24
+        let seedWarp = sin(seed + phase * 0.17) * 0.18
+        let carrier = sin(
+            radius * voiceRippleSpatialFrequency -
+                phase * voiceRipplePhaseSpeed +
+                angularWarp +
+                seedWarp
+        )
         let harmonic =
             sin(
                 radius * voiceRippleSpatialFrequency * 0.52 -
-                    phase * voiceRipplePhaseSpeed * 0.63 +
+                    phase * voiceRipplePhaseSpeed * 0.71 -
+                    angularWarp * 0.65 +
                     .pi / 3
-            ) * 0.22
+            ) * 0.16
+        let crossWave =
+            sin(
+                radius * 11 * cos(angle - phase * 0.22) -
+                    phase * 2.15 +
+                    seed * 0.09
+            ) * 0.24
+        let amplitudeDrift =
+            0.88 + sin(phase * 0.61 + angle * 2 + seed) * 0.12
         let centerEntrance = smoothstep(0.04, 0.22, radius)
         let outerRelease =
             1 - smoothstep(0.92, 1.34, radius) * 0.18
@@ -173,12 +190,13 @@ enum VoiceOrbMotion {
             (0.72 + clamp(intensity) * 0.28) *
             (0.88 + clamp(driftScale / 1.74) * 0.12)
 
-        return (carrier + harmonic) *
+        return (carrier + harmonic + crossWave) *
             voiceRippleAmplitude *
             voice *
             centerEntrance *
             outerRelease *
-            particleWeight
+            particleWeight *
+            amplitudeDrift
     }
 
     private static func smoothstep(

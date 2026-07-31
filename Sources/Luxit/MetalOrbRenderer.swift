@@ -133,7 +133,7 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
             displayLevel * VoiceOrbMotion.voiceRadiusGrowth
         ) *
             (1 + (processingScale - 1) * processingBlend)
-        let rotation = animationPhase * 0.11
+        let rotation = animationPhase * VoiceOrbMotion.rotationScale
         let accentComponents = Self.components(of: accent)
         let highlightComponents = Self.components(of: highlight)
         let backingScale = CGFloat(
@@ -397,14 +397,37 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
             ? rotated / radialDistance
             : float2(0.0);
         float voiceRippleLevel = smoothstep(u[32], u[33], u[6]);
+        float voiceRippleAngle = atan2(rotated.y, rotated.x);
+        float voiceRippleAngularWarp =
+            sin(voiceRippleAngle * 3.0 + u[5] * 0.34) * 0.58 +
+            cos(voiceRippleAngle * 5.0 - u[5] * 0.21) * 0.24;
+        float voiceRippleSeedWarp =
+            sin(flowPhaseY + u[5] * 0.17) * 0.18;
         float voiceRippleCarrier = sin(
-            radialDistance * u[30] - u[5] * u[31]
+            radialDistance * u[30] -
+                u[5] * u[31] +
+                voiceRippleAngularWarp +
+                voiceRippleSeedWarp
         );
         float voiceRippleHarmonic = sin(
             radialDistance * u[30] * 0.52 -
-                u[5] * u[31] * 0.63 +
+                u[5] * u[31] * 0.71 -
+                voiceRippleAngularWarp * 0.65 +
                 M_PI_F / 3.0
-        ) * 0.22;
+        ) * 0.16;
+        float voiceRippleCrossWave = sin(
+            radialDistance * 11.0 *
+                cos(voiceRippleAngle - u[5] * 0.22) -
+                u[5] * 2.15 +
+                flowPhaseY * 0.09
+        ) * 0.24;
+        float voiceRippleAmplitudeDrift =
+            0.88 +
+            sin(
+                u[5] * 0.61 +
+                    voiceRippleAngle * 2.0 +
+                    flowPhaseY
+            ) * 0.12;
         float voiceRippleEntrance = smoothstep(
             0.04,
             0.22,
@@ -419,12 +442,17 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
                 clamp(driftScale / 1.74, 0.0, 1.0) * 0.12
             );
         float voiceRippleOffset =
-            (voiceRippleCarrier + voiceRippleHarmonic) *
+            (
+                voiceRippleCarrier +
+                voiceRippleHarmonic +
+                voiceRippleCrossWave
+            ) *
             u[29] *
             voiceRippleLevel *
             voiceRippleEntrance *
             voiceRippleRelease *
-            voiceRippleWeight;
+            voiceRippleWeight *
+            voiceRippleAmplitudeDrift;
         settled += radialDirection * rippleOffset;
         settled += radialDirection * voiceRippleOffset;
         float radialSeed = clamp(

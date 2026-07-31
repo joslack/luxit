@@ -334,7 +334,8 @@ private final class EdgeIndicatorView: NSView {
             (1 + (processingScale - 1) * processingBlend)
         // Processing preserves the recording flow phase while a separate
         // radius modulation adds the unified breathing signal.
-        let rotation = animationPhase * 0.11
+        let rotation =
+            animationPhase * VoiceOrbMotion.rotationScale
         let (color, highlight) = orbColors
         let cosine = cos(rotation)
         let sine = sin(rotation)
@@ -443,6 +444,8 @@ private final class EdgeIndicatorView: NSView {
                 rotatedY / safeRadialDistance * rippleOffset
             let voiceRippleOffset = VoiceOrbMotion.voiceRippleOffset(
                 radialDistance: radialDistance,
+                angle: atan2(rotatedY, rotatedX),
+                seed: point.flowPhaseY,
                 phase: animationPhase,
                 level: displayLevel,
                 intensity: point.intensity,
