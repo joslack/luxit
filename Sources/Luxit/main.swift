@@ -612,11 +612,6 @@ private final class EdgeIndicator {
 
     func show(_ state: EdgeState) {
         let previousState = currentState
-        if state == previousState {
-            ensureCurrentScreens()
-            presentPanels()
-            return
-        }
         if state != .processing {
             pendingCompletionWorkItem?.cancel()
             pendingCompletionWorkItem = nil
@@ -966,16 +961,14 @@ private final class EdgeIndicator {
                 min(5.0, spectralFlux * 60)
             self.orbMotionSpeed +=
                 (targetMotionSpeed - self.orbMotionSpeed) * 0.42
-            // The animation timer presents the newest conditioned audio state
-            // on the display cadence. Rendering here as well creates a second,
-            // unsynchronized stream of Metal frames while speech is active.
+            for surface in self.surfaces {
+                surface.view.performVisualUpdate {
+                    surface.view.audioLevel = self.currentAudioLevel
+                    surface.view.audioProfile = self.currentAudioProfile
+                }
+            }
+            self.updatePointerDissipation()
         }
-    }
-
-    func reassertRecordingVisibility() {
-        guard currentState == .recording else { return }
-        ensureCurrentScreens()
-        presentPanels()
     }
 
     func hide() {
@@ -1149,9 +1142,6 @@ private final class EdgeIndicator {
                 currentState == .processing || currentState == .completing
                     ? breathPhase
                     : phase
-            // Make the transparent Metal surface drawable before asking its
-            // paused MTKView to render the current frame.
-            surface.panel.orderFrontRegardless()
             surface.view.performVisualUpdate {
                 surface.view.indicatorState = currentState
                 surface.view.audioLevel = currentAudioLevel
@@ -1163,6 +1153,7 @@ private final class EdgeIndicator {
                 surface.view.animationPhase = phase
                 surface.view.orbMotionPhase = orbMotionPhase
             }
+            surface.panel.orderFrontRegardless()
             surface.panel.displayIfNeeded()
         }
         updatePointerDissipation()
@@ -3302,7 +3293,6 @@ private final class AppDelegate:
             try recorder.start { [weak self] level, spectrum in
                 self?.indicator.setAudioLevel(level, spectrum: spectrum)
             }
-            indicator.reassertRecordingVisibility()
             DiagnosticLog.write("Recording started")
             guard let modelURL = selectedModelURL else {
                 setStatus(
