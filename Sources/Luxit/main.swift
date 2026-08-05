@@ -1359,7 +1359,7 @@ private final class AudioRecorder {
         }
         let beganAt = CACurrentMediaTime()
         do {
-            let device = try SystemAudioInput.currentDevice()
+            let device = try SystemAudioInput.preferredDevice()
             let input = engine.inputNode
             try SystemAudioInput.bind(input, to: device)
             _ = input.outputFormat(forBus: 0)
@@ -1385,7 +1385,7 @@ private final class AudioRecorder {
 
     func start(level: @escaping (Float, [Float]) -> Void) throws {
         let beganAt = CACurrentMediaTime()
-        let device = try SystemAudioInput.currentDevice()
+        let device = try SystemAudioInput.preferredDevice()
         if routeTracker.requiresEngineReplacement(for: device.id) {
             let previousDeviceID = routeTracker.preparedDeviceID
             engine.stop()

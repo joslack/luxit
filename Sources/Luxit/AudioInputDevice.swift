@@ -3,9 +3,30 @@ import AudioToolbox
 import CoreAudio
 import Foundation
 
+enum AudioInputTransport: Equatable {
+    case builtIn
+    case bluetooth
+    case other
+}
+
 struct AudioInputDevice: Equatable {
     let id: AudioDeviceID
     let name: String
+    let transport: AudioInputTransport
+}
+
+enum AudioInputPolicy {
+    static func preferredDevice(
+        defaultDevice: AudioInputDevice,
+        availableDevices: [AudioInputDevice]
+    ) -> AudioInputDevice {
+        guard defaultDevice.transport == .bluetooth else {
+            return defaultDevice
+        }
+        return availableDevices.first {
+            $0.transport == .builtIn
+        } ?? defaultDevice
+    }
 }
 
 struct AudioInputRouteTracker {
@@ -26,6 +47,17 @@ struct AudioInputRouteTracker {
 }
 
 enum SystemAudioInput {
+    static func preferredDevice() throws -> AudioInputDevice {
+        let defaultDevice = try currentDevice()
+        guard defaultDevice.transport == .bluetooth else {
+            return defaultDevice
+        }
+        return AudioInputPolicy.preferredDevice(
+            defaultDevice: defaultDevice,
+            availableDevices: inputDevices()
+        )
+    }
+
     static func currentDevice() throws -> AudioInputDevice {
         var address = AudioObjectPropertyAddress(
             mSelector: kAudioHardwarePropertyDefaultInputDevice,
@@ -54,7 +86,8 @@ enum SystemAudioInput {
 
         return AudioInputDevice(
             id: deviceID,
-            name: deviceName(for: deviceID) ?? "System microphone"
+            name: deviceName(for: deviceID) ?? "System microphone",
+            transport: deviceTransport(for: deviceID)
         )
     }
 
@@ -101,6 +134,95 @@ enum SystemAudioInput {
         )
         guard status == noErr, let name else { return nil }
         return name.takeUnretainedValue() as String
+    }
+
+    private static func deviceTransport(
+        for deviceID: AudioDeviceID
+    ) -> AudioInputTransport {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyTransportType,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var transport = UInt32(0)
+        var size = UInt32(MemoryLayout<UInt32>.size)
+        let status = AudioObjectGetPropertyData(
+            deviceID,
+            &address,
+            0,
+            nil,
+            &size,
+            &transport
+        )
+        guard status == noErr else { return .other }
+        switch transport {
+        case kAudioDeviceTransportTypeBuiltIn:
+            return .builtIn
+        case kAudioDeviceTransportTypeBluetooth:
+            return .bluetooth
+        default:
+            return .other
+        }
+    }
+
+    private static func inputDevices() -> [AudioInputDevice] {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDevices,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var size: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(
+            AudioObjectID(kAudioObjectSystemObject),
+            &address,
+            0,
+            nil,
+            &size
+        ) == noErr else {
+            return []
+        }
+
+        let count = Int(size) / MemoryLayout<AudioDeviceID>.size
+        guard count > 0 else { return [] }
+        var deviceIDs = [AudioDeviceID](
+            repeating: AudioDeviceID(kAudioObjectUnknown),
+            count: count
+        )
+        guard AudioObjectGetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject),
+            &address,
+            0,
+            nil,
+            &size,
+            &deviceIDs
+        ) == noErr else {
+            return []
+        }
+
+        return deviceIDs.compactMap { deviceID in
+            guard supportsInput(deviceID) else { return nil }
+            return AudioInputDevice(
+                id: deviceID,
+                name: deviceName(for: deviceID) ?? "Microphone",
+                transport: deviceTransport(for: deviceID)
+            )
+        }
+    }
+
+    private static func supportsInput(_ deviceID: AudioDeviceID) -> Bool {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyStreams,
+            mScope: kAudioDevicePropertyScopeInput,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var size: UInt32 = 0
+        return AudioObjectGetPropertyDataSize(
+            deviceID,
+            &address,
+            0,
+            nil,
+            &size
+        ) == noErr && size >= MemoryLayout<AudioStreamID>.size
     }
 
     private static func audioError(
