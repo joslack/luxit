@@ -180,7 +180,6 @@ struct TranscriptWindowView: View {
     @ObservedObject var model: TranscriptWindowModel
     private var tab: Int { get { model.selectedTab } nonmutating set { model.selectedTab = newValue } }
     @State private var query = ""
-    @State private var copied = false
     @State private var confirmingDelete = false
 
     private var selection: TranscriptEntry? {
@@ -250,11 +249,7 @@ struct TranscriptWindowView: View {
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                         Spacer()
-                        Button(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc") {
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(entry.displayText, forType: .string)
-                            copied = true
-                        }
+                        TranscriptCopyButton(entry: entry).id(entry.id)
                         if entry.recordingState == .failed {
                             Button("Retry", systemImage: "arrow.clockwise") { model.onRetry?(entry.id) }
                         }
@@ -290,7 +285,6 @@ struct TranscriptWindowView: View {
         .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous)
             .strokeBorder(.white.opacity(0.12), lineWidth: 1).allowsHitTesting(false))
         .preferredColorScheme(.dark)
-        .onChange(of: model.selectedID) { _, _ in copied = false }
         .confirmationDialog("Delete this transcript from this Mac?", isPresented: $confirmingDelete) {
             Button("Delete transcript", role: .destructive) {
                 if let id = model.selectedID { model.onDelete?(id) }
@@ -351,6 +345,28 @@ struct TranscriptWindowView: View {
         let seconds = max(0, Int(duration))
         return seconds >= 3600 ? String(format: "%d:%02d:%02d", seconds / 3600, seconds / 60 % 60, seconds % 60)
             : String(format: "%d:%02d", seconds / 60, seconds % 60)
+    }
+}
+
+private struct TranscriptCopyButton: View {
+    let entry: TranscriptEntry
+    @State private var confirmationID: UUID?
+
+    var body: some View {
+        Button(confirmationID == nil ? "Copy" : "Copied",
+               systemImage: confirmationID == nil ? "doc.on.doc" : "checkmark") {
+            NSPasteboard.general.clearContents()
+            confirmationID = NSPasteboard.general.setString(entry.displayText, forType: .string) ? UUID() : nil
+        }
+        .task(id: confirmationID) {
+            guard let confirmation = confirmationID else { return }
+            do { try await Task.sleep(for: .seconds(1.5)) }
+            catch { return }
+            // A second copy starts a fresh confirmation interval. A cancelled
+            // task must never clear that newer confirmation or another entry's.
+            if confirmationID == confirmation { confirmationID = nil }
+        }
+        .onDisappear { confirmationID = nil }
     }
 }
 
