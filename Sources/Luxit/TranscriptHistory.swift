@@ -39,16 +39,19 @@ struct TranscriptSegment: Codable, Equatable, Identifiable {
             text.lowercased().split(whereSeparator: \.isWhitespace)
                 .map { $0.filter { $0.isLetter || $0.isNumber } }.filter { !$0.isEmpty }
         }
+        let tokens = segments.map { words($0.text) }
+        let computerIndices = segments.indices.filter { segments[$0].source == .computer }
+            .sorted { segments[$0].start < segments[$1].start }
         var computers: [[String]: [Int]] = [:]
-        for i in segments.indices where segments[i].source == .computer {
-            let key = words(segments[i].text)
+        for i in computerIndices {
+            let key = tokens[i]
             if key.count >= 2 { computers[key, default: []].append(i) }
         }
         var paired = Set<Int>()
         var omitted = Set<Int>()
         for i in segments.indices where segments[i].source == .microphone {
             let mic = segments[i]
-            let candidates = computers[words(mic.text)] ?? []
+            let candidates = computers[tokens[i]] ?? []
             if let match = candidates.first(where: { j in
                 guard !paired.contains(j) else { return false }
                 let computer = segments[j]
@@ -63,6 +66,47 @@ struct TranscriptSegment: Codable, Equatable, Identifiable {
             }) {
                 paired.insert(match)
                 omitted.insert(i)
+                continue
+            }
+
+            // Playback can reach the microphone late or be split at different
+            // pauses. Match an entire microphone paragraph against consecutive
+            // computer paragraphs, retaining anything with even one new word.
+            // This only changes presentation; both originals remain on disk.
+            guard tokens[i].count >= 4, let duration = mic.duration,
+                  duration.isFinite, duration > 0, mic.start.isFinite else { continue }
+            let micEnd = mic.start + duration
+            let nearby = computerIndices.filter { j in
+                guard let length = segments[j].duration, length.isFinite, length > 0 else { return false }
+                return segments[j].start < micEnd && segments[j].start + length > mic.start
+            }
+            var stream: [(word: String, index: Int)] = []
+            var previousEnd: TimeInterval?
+            for j in nearby {
+                if let previousEnd, segments[j].start - previousEnd > 1.5 { stream.removeAll() }
+                stream += tokens[j].map { ($0, j) }
+                previousEnd = segments[j].start + (segments[j].duration ?? 0)
+                guard stream.count >= tokens[i].count else { continue }
+                for offset in 0...(stream.count - tokens[i].count) {
+                    let match = stream[offset..<(offset + tokens[i].count)]
+                    guard match.map(\.word) == tokens[i] else { continue }
+                    let matched = Set(match.map(\.index))
+                    // Most of the microphone interval must actually coincide
+                    // with the matched playback, not a later spoken repetition.
+                    var covered: TimeInterval = 0
+                    var coveredEnd = mic.start
+                    for k in nearby where matched.contains(k) {
+                        let begin = max(mic.start, max(coveredEnd, segments[k].start))
+                        let end = min(micEnd, segments[k].start + (segments[k].duration ?? 0))
+                        covered += max(0, end - begin)
+                        coveredEnd = max(coveredEnd, end)
+                    }
+                    guard covered >= duration * 0.75 else { continue }
+                    paired.formUnion(matched)
+                    omitted.insert(i)
+                    break
+                }
+                if omitted.contains(i) { break }
             }
         }
         return segments.indices.compactMap { i in

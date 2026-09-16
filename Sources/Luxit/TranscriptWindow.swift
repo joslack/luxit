@@ -64,8 +64,12 @@ private final class TranscriptPanel: NSPanel {
 
 final class TranscriptWindowController: NSWindowController {
     private var animationGeneration = 0
+    private var isPresented = false
+    private var localClickMonitor: Any?
+    private var globalClickMonitor: Any?
+    private weak var toggleButton: NSButton?
 
-    init(model: TranscriptWindowModel) {
+    init(model: TranscriptWindowModel, toggleButton: NSButton? = nil) {
         let panel = TranscriptPanel(contentRect: NSRect(origin: .zero, size: TranscriptPanelLayout.size),
                                     styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.title = "Luxit Transcripts"
@@ -84,18 +88,26 @@ final class TranscriptWindowController: NSWindowController {
         hostingView.sizingOptions = []
         panel.contentView = hostingView
         super.init(window: panel)
+        self.toggleButton = toggleButton
         panel.onDismiss = { [weak self] in self?.dismiss() }
         model.onDismiss = { [weak self] in self?.dismiss() }
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
+    deinit {
+        if let localClickMonitor { NSEvent.removeMonitor(localClickMonitor) }
+        if let globalClickMonitor { NSEvent.removeMonitor(globalClickMonitor) }
+    }
+
     func present() {
         guard let window else { return }
-        animationGeneration += 1
-        if window.isVisible, window.alphaValue > 0.99 { window.makeKeyAndOrderFront(nil); return }
+        if isPresented { window.makeKeyAndOrderFront(nil); return }
         let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main
         guard let screen else { return }
+        isPresented = true
+        animationGeneration += 1
+        monitorOutsideClicks()
         let frame = TranscriptPanelLayout.frame(in: screen.visibleFrame)
         let reducedMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         window.setFrame(frame.offsetBy(dx: 0, dy: reducedMotion ? 0 : 22), display: false)
@@ -110,7 +122,9 @@ final class TranscriptWindowController: NSWindowController {
     }
 
     func dismiss() {
-        guard let window, window.isVisible else { return }
+        stopMonitoringOutsideClicks()
+        guard isPresented, let window else { return }
+        isPresented = false
         animationGeneration += 1
         let generation = animationGeneration
         NSAnimationContext.runAnimationGroup { context in
@@ -127,7 +141,37 @@ final class TranscriptWindowController: NSWindowController {
     }
 
     func toggle() {
-        if window?.isVisible == true, window?.alphaValue == 1 { dismiss() } else { present() }
+        if isPresented { dismiss() } else { present() }
+    }
+
+    private func monitorOutsideClicks() {
+        let clicks: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        localClickMonitor = NSEvent.addLocalMonitorForEvents(matching: clicks) { [weak self] event in
+            guard let self else { return event }
+            // The status button owns its mouse-up toggle. Dismissing on its
+            // mouse-down would make that same click reopen the panel.
+            if let button = self.toggleButton, event.window === button.window,
+               button.bounds.contains(button.convert(event.locationInWindow, from: nil)) {
+                return event
+            }
+            var target = event.window
+            while let candidate = target {
+                if candidate === self.window { return event }
+                target = candidate.parent ?? candidate.sheetParent
+            }
+            self.dismiss()
+            return event
+        }
+        globalClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: clicks) { [weak self] _ in
+            self?.dismiss()
+        }
+    }
+
+    private func stopMonitoringOutsideClicks() {
+        if let localClickMonitor { NSEvent.removeMonitor(localClickMonitor) }
+        if let globalClickMonitor { NSEvent.removeMonitor(globalClickMonitor) }
+        localClickMonitor = nil
+        globalClickMonitor = nil
     }
 }
 

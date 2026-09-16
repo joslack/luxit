@@ -2885,7 +2885,7 @@ private final class AppDelegate:
     }
 
     @objc private func openTranscriptHistory() {
-        if transcriptWindow == nil { transcriptWindow = TranscriptWindowController(model: transcriptModel) }
+        if transcriptWindow == nil { transcriptWindow = TranscriptWindowController(model: transcriptModel, toggleButton: statusItem.button) }
         transcriptWindow?.present()
     }
 
@@ -3107,7 +3107,7 @@ private final class AppDelegate:
         if NSApp.currentEvent?.type == .rightMouseUp {
             showSettings()
         } else {
-            if transcriptWindow == nil { transcriptWindow = TranscriptWindowController(model: transcriptModel) }
+            if transcriptWindow == nil { transcriptWindow = TranscriptWindowController(model: transcriptModel, toggleButton: statusItem.button) }
             transcriptWindow?.toggle()
         }
     }
@@ -3115,7 +3115,7 @@ private final class AppDelegate:
     private func showSettings() {
         refreshSettings()
         transcriptModel.showingSettings = true
-        if transcriptWindow == nil { transcriptWindow = TranscriptWindowController(model: transcriptModel) }
+        if transcriptWindow == nil { transcriptWindow = TranscriptWindowController(model: transcriptModel, toggleButton: statusItem.button) }
         transcriptWindow?.present()
     }
 
