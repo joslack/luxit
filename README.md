@@ -68,6 +68,8 @@ rule: `Luke\s+(sit|set)` → `Luxit`. Patterns support captured groups such as
 run in their listed order. They apply to new dictations and recording paragraphs
 before saving or pasting; existing transcripts stay unchanged. Your rules stay
 on this Mac. **Vocabulary** supplies recognition hints for Whisper models only.
+For JSON configuration, scripts, and pattern examples, see the
+[corrections guide](docs/corrections.md).
 
 Choose **Record** to capture your microphone and computer audio together, such
 as a call or video. The transcript grows in timestamped paragraphs at natural
