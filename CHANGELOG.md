@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+- Add a compact top-center panel with searchable local dictation and recording
+  history, copy and delete controls, and matching settings.
+- Record microphone and computer audio locally, with a growing timestamped
+  transcript, pause/resume, and continued recording while the panel is hidden.
+- Transcribe long recordings in bounded chunks and recover unfinished work after
+  a restart. Microphone and Computer labels identify sources, not speakers.
+- Make the listening cloud respond more clearly to quiet speech, dissolve around
+  the pointer, and return reliably after idle periods.
+- Keep GPU frame waits off the interface thread and make tab hit areas cover the
+  full control.
+
 ## 0.10.0 — 2026-07-28
 
 - Make Parakeet Metal the default, benchmark-backed transcription path.

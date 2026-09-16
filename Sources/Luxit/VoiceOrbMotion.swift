@@ -1,12 +1,29 @@
 import CoreGraphics
 
 enum VoiceOrbMotion {
+    static let framesPerSecond: Double = 60
+    // Resume with a normal frame step after idle/sleep instead of jumping
+    // through the entire appearance or completion animation.
+    static func frameElapsed(since previous: Double, now: Double) -> CGFloat {
+        min(1.0 / 30.0, max(0, now - previous))
+    }
+
+    static func voiceSpeed(level: CGFloat) -> CGFloat { 0.45 + clamp(level) * 8.75 }
+    static func flowSpeed(level: CGFloat) -> CGFloat { 0.65 + clamp(level) * 4.5 }
+
+    // More independent motion during speech, with the same calm resting field.
+    // Both renderers use this bounded gain rather than adding frame-random noise.
+    static func particleJitterScale(level: CGFloat) -> CGFloat {
+        jitterScale + clamp(level) * 0.08
+    }
+
     static let speedScale: CGFloat = 1.08
     static let currentScale: CGFloat = 0.86
-    static let jitterScale: CGFloat = 0.58
+    static let attractorScale: CGFloat = 0.92
+    static let jitterScale: CGFloat = 0.44
     static let spatialScale: CGFloat = 1.08
     static let voiceResponseScale: CGFloat = 1.65
-    static let baseRadius: CGFloat = 78
+    static let baseRadius: CGFloat = 104
     static let voiceRadiusGrowth: CGFloat = 10
     static let maximumParticleEDRGain: CGFloat = 1.55
     static let processingRippleAmplitude: CGFloat = 9

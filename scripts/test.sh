@@ -96,6 +96,7 @@ swiftc \
   -target arm64-apple-macosx26.0 \
   -module-cache-path "$module_cache" \
   "$project_dir/Sources/Luxit/VoiceOrbMotion.swift" \
+  "$project_dir/Sources/Luxit/VoiceOrbDissolution.swift" \
   "$project_dir/Sources/Luxit/VoiceOrbLayout.swift" \
   "$project_dir/Tests/VoiceOrbConfigurationTests.swift" \
   -o "$build_dir/VoiceOrbConfigurationTests"
@@ -126,7 +127,62 @@ swiftc \
   -target arm64-apple-macosx26.0 \
   -module-cache-path "$module_cache" \
   "$project_dir/Sources/Luxit/VoiceAnimationFilter.swift" \
+  "$project_dir/Sources/Luxit/VoiceAnimationEnvelope.swift" \
+  "$project_dir/Sources/Luxit/LatestAudioLevel.swift" \
   "$project_dir/Tests/VoiceAnimationFilterTests.swift" \
   -o "$build_dir/VoiceAnimationFilterTests"
 
 "$build_dir/VoiceAnimationFilterTests"
+
+swiftc \
+  -swift-version 5 \
+  -sdk "$sdk_path" \
+  -target arm64-apple-macosx26.0 \
+  -module-cache-path "$module_cache" \
+  "$project_dir/Sources/Luxit/TranscriptHistory.swift" \
+  "$project_dir/Sources/Luxit/TranscriptPanelLayout.swift" \
+  "$project_dir/Tests/TranscriptHistoryTests.swift" \
+  -o "$build_dir/TranscriptHistoryTests"
+
+"$build_dir/TranscriptHistoryTests"
+
+swiftc \
+  -swift-version 5 \
+  -sdk "$sdk_path" \
+  -target arm64-apple-macosx26.0 \
+  -module-cache-path "$module_cache" \
+  -framework AVFoundation \
+  -framework ScreenCaptureKit \
+  "$project_dir/Sources/Luxit/TranscriptHistory.swift" \
+  "$project_dir/Sources/Luxit/ComputerAudioRecorder.swift" \
+  "$project_dir/Sources/Luxit/RecordingSession.swift" \
+  "$project_dir/Tests/ComputerAudioRecorderTests.swift" \
+  -o "$build_dir/ComputerAudioRecorderTests"
+
+"$build_dir/ComputerAudioRecorderTests"
+
+swiftc -swift-version 5 -sdk "$sdk_path" -target arm64-apple-macosx26.0 \
+  -module-cache-path "$module_cache" -framework AVFoundation \
+  "$project_dir/Sources/Luxit/TranscriptHistory.swift" \
+  "$project_dir/Sources/Luxit/RecordingSession.swift" \
+  "$project_dir/Tests/RecordingSessionTests.swift" \
+  -o "$build_dir/RecordingSessionTests"
+"$build_dir/RecordingSessionTests"
+
+whisper_prefix="$(brew --prefix whisper-cpp)"
+ggml_prefix="$(brew --prefix ggml)"
+clang -std=c11 -O3 -I"$whisper_prefix/include" -I"$ggml_prefix/include" \
+  -c "$project_dir/Sources/Luxit/VoiceActivityBridge.c" -o "$build_dir/VoiceActivityBridge.o"
+swiftc -swift-version 5 -O -sdk "$sdk_path" -target arm64-apple-macosx26.0 \
+  -module-cache-path "$module_cache" \
+  -framework AVFoundation -framework Accelerate \
+  -import-objc-header "$project_dir/Sources/Luxit/VoiceActivityBridge.h" \
+  -I"$whisper_prefix/include" -I"$ggml_prefix/include" \
+  -L"$whisper_prefix/lib" -L"$ggml_prefix/lib" -lwhisper -lggml -lggml-base \
+  -Xlinker -rpath -Xlinker "$whisper_prefix/lib" \
+  -Xlinker -rpath -Xlinker "$ggml_prefix/lib" \
+  "$project_dir/Sources/Luxit/LogSpectrumAnalyzer.swift" \
+  "$project_dir/Sources/Luxit/VoiceActivityAnalyzer.swift" \
+  "$project_dir/Tests/VoiceActivityAnalyzerTests.swift" \
+  "$build_dir/VoiceActivityBridge.o" -o "$build_dir/VoiceActivityAnalyzerTests"
+"$build_dir/VoiceActivityAnalyzerTests" "$whisper_prefix/share/whisper-cpp/jfk.wav"

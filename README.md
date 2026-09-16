@@ -45,6 +45,29 @@ activity models. Other model choices are not downloaded automatically.
 The white orb shows that Luxit is listening, then gently pulses while it
 transcribes. All audio and transcription stay on your Mac.
 
+Click Luxit's menu-bar icon to open the panel at the top center of your screen.
+**History** keeps your dictations and recordings locally: search, open, copy,
+or delete a transcript. History begins with this version; older dictations
+cannot be recovered.
+
+Choose **Record** to capture your microphone and computer audio together, such
+as a call or video. The transcript grows in timestamped paragraphs at natural
+pauses, with separate **Microphone** and **Computer** labels. Pause, resume,
+and stop from the top bar. These recordings do not paste into another app.
+macOS may ask for **Screen & System Audio Recording** access. Luxit receives
+only audio; it does not save screen images or video. Headphones help keep
+computer playback from also entering your microphone.
+
+Recording audio is saved locally in small chunks until its transcript is
+safely saved, then removed. Interrupted recordings recover when Luxit reopens;
+failed chunks have a **Retry** button. Source labels do not identify individual
+speakers. Transcript history stays in
+`~/Library/Application Support/EdgeWhisper/History/` until you delete it.
+Use the gear button or right-click the menu-bar icon for models, permissions,
+and other controls. Press **Escape** or the up arrow to dismiss the panel;
+recording and transcription continue while it is hidden. Keep Luxit running
+and your Mac awake until you stop recording.
+
 ## Benchmarks
 
 These results use 20 private English dictation samples, decoded four times by

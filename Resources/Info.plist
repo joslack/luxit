@@ -27,6 +27,6 @@
     <key>LSUIElement</key>
     <true/>
     <key>NSMicrophoneUsageDescription</key>
-    <string>Luxit records only while Caps Lock dictation is active and transcribes the audio locally on this Mac.</string>
+    <string>Luxit records your microphone during Caps Lock dictation or when you start a recording. All audio is transcribed locally on this Mac.</string>
 </dict>
 </plist>

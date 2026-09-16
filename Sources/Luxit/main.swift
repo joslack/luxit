@@ -8,6 +8,7 @@ import MetalKit
 private enum DictationState {
     case idle
     case recording
+    case computerRecording
 }
 
 private enum EdgeState {
@@ -141,6 +142,9 @@ private final class EdgeIndicatorView: NSView {
     private var metalOrbRenderer: MetalOrbRenderer?
     private var visualUpdateDepth = 0
     private var visualRefreshPending = false
+    private var missedMetalFrames = 0
+    private var particleDissolution: [VoiceOrbDissolution] = []
+    private var lastFallbackFrameUptime = ProcessInfo.processInfo.systemUptime
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -157,7 +161,6 @@ private final class EdgeIndicatorView: NSView {
     override func layout() {
         super.layout()
         metalOrbView?.frame = bounds
-        syncMetalOrb()
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -217,8 +220,12 @@ private final class EdgeIndicatorView: NSView {
     }
 
     private func renderVisuals() {
-        needsDisplay = true
-        syncMetalOrb()
+        metalOrbView?.isHidden = indicatorState == .hidden
+        if metalOrbRenderer == nil { needsDisplay = true }
+    }
+
+    func renderFrame() {
+        if metalOrbRenderer == nil { needsDisplay = true } else { syncMetalOrb() }
     }
 
     private func syncMetalOrb() {
@@ -240,6 +247,21 @@ private final class EdgeIndicatorView: NSView {
             highlight: highlight,
             bounds: bounds
         )
+        missedMetalFrames = metalOrbRenderer.consecutiveUnavailableFrames
+        // A drawable can disappear after display sleep without invalidating the
+        // renderer. Fall back only after visible frames repeatedly fail.
+        if window?.isVisible == true && missedMetalFrames >= 8 {
+            self.metalOrbRenderer = nil
+            metalOrbView?.removeFromSuperview()
+            metalOrbView = nil
+            needsDisplay = true
+            DiagnosticLog.write("Voice orb recovered with AppKit after missing Metal drawables")
+        }
+    }
+
+    func redrawAfterPresentation() {
+        missedMetalFrames = 0
+        renderFrame()
     }
 
     private var processingColor: NSColor {
@@ -316,10 +338,7 @@ private final class EdgeIndicatorView: NSView {
                 VoiceOrbMotion.processingLevelFloor * processingBlend
             )
         )
-        let strongestBand = audioProfile.max() ?? 0
-        let orbSpectrum = strongestBand > 0
-            ? audioProfile.map { max(0, min(1, $0 / strongestBand)) }
-            : audioProfile
+        let orbSpectrum = audioProfile
         let points = VoiceOrbGeometry.points(
             spectrum: orbSpectrum,
             level: displayLevel
@@ -347,6 +366,13 @@ private final class EdgeIndicatorView: NSView {
             VoiceOrbMotion.materializationDotScale(
                 appearanceCondensation
             )
+        let now = ProcessInfo.processInfo.systemUptime
+        let interactionElapsed = Float(VoiceOrbMotion.frameElapsed(since: lastFallbackFrameUptime, now: now))
+        lastFallbackFrameUptime = now
+        if particleDissolution.count != points.count || appearanceProgress < 0.01 {
+            particleDissolution = Array(repeating: VoiceOrbDissolution(), count: points.count)
+        }
+        let pointer = pointerLocation.map { SIMD2<Float>(Float($0.x), Float($0.y)) }
         for (index, point) in points.enumerated() {
             let rotatedX = point.x * cosine - point.y * sine
             let rotatedY = point.x * sine + point.y * cosine
@@ -364,7 +390,7 @@ private final class EdgeIndicatorView: NSView {
                 ) *
                 (0.42 + point.intensity * 0.58) *
                 point.driftScale *
-                VoiceOrbMotion.jitterScale
+                VoiceOrbMotion.particleJitterScale(level: audioLevel)
             let flowAmount = (
                 2.20 +
                 displayLevel *
@@ -402,7 +428,7 @@ private final class EdgeIndicatorView: NSView {
                         8.5 *
                         VoiceOrbMotion.voiceResponseScale
                 ) *
-                point.driftScale
+                point.driftScale * VoiceOrbMotion.attractorScale
             let attractorX =
                 (
                     sin(rotatedY * 1.7 + particleTimeX) +
@@ -471,18 +497,13 @@ private final class EdgeIndicatorView: NSView {
                     spawnY * (1 - condensation) +
                     settledY * condensation
             )
-            var dissipation: CGFloat = 0
-            if let pointerLocation {
-                let deltaX = position.x - pointerLocation.x
-                let deltaY = position.y - pointerLocation.y
-                let distance = hypot(deltaX, deltaY)
-                dissipation = max(0, 1 - distance / 42)
-                if dissipation > 0 {
-                    let safeDistance = max(1, distance)
-                    position.x += deltaX / safeDistance * dissipation * 13
-                    position.y += deltaY / safeDistance * dissipation * 13
-                }
-            }
+            particleDissolution[index].advance(
+                anchor: SIMD2(Float(position.x), Float(position.y)), pointer: pointer,
+                seed: Float(point.flowPhase), elapsed: interactionElapsed)
+            let interaction = particleDissolution[index]
+            position.x += CGFloat(interaction.offset.x)
+            position.y += CGFloat(interaction.offset.y)
+            let dissipation = CGFloat(interaction.amount)
 
             let edgeFeather = pow(
                 max(
@@ -581,6 +602,52 @@ private final class EdgeIndicatorView: NSView {
     }
 }
 
+/// Window-associated display timing follows the display through refresh-rate,
+/// Space and sleep changes. All animation states share this one clock.
+private final class OrbAnimationClock: NSObject {
+    private var link: CADisplayLink?
+    private var timer: Timer?
+    private var callback: ((OrbAnimationClock) -> Void)?
+    private var repeating = true
+
+    init(view: NSView?, callback: @escaping (OrbAnimationClock) -> Void) {
+        self.callback = callback
+        super.init()
+        retarget(to: view)
+    }
+
+    func retarget(to view: NSView?) {
+        guard repeating else { return }
+        link?.invalidate(); link = nil
+        timer?.invalidate(); timer = nil
+        if let view {
+            let link = view.displayLink(target: self, selector: #selector(tick))
+            let fps = Float(VoiceOrbMotion.framesPerSecond)
+            link.preferredFrameRateRange = CAFrameRateRange(minimum: fps, maximum: fps, preferred: fps)
+            self.link = link
+            link.add(to: .main, forMode: .common)
+        } else {
+            let timer = Timer(timeInterval: 1 / VoiceOrbMotion.framesPerSecond, repeats: true) { [weak self] _ in self?.tick() }
+            self.timer = timer
+            RunLoop.main.add(timer, forMode: .common)
+        }
+    }
+
+    init(delay: TimeInterval, callback: @escaping (OrbAnimationClock) -> Void) {
+        self.callback = callback
+        repeating = false
+        super.init()
+        timer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in self?.tick() }
+    }
+
+    @objc private func tick() { callback?(self) }
+    func invalidate() {
+        link?.invalidate(); link = nil
+        timer?.invalidate(); timer = nil
+        callback = nil
+    }
+}
+
 private final class EdgeIndicator {
     private struct Surface {
         let displayID: NSNumber
@@ -589,7 +656,7 @@ private final class EdgeIndicator {
     }
 
     private var surfaces: [Surface] = []
-    private var timer: Timer?
+    private var timer: OrbAnimationClock?
     private var phase: CGFloat = 0
     private var breathPhase: CGFloat = -.pi / 2
     private var currentState: EdgeState = .hidden
@@ -604,7 +671,10 @@ private final class EdgeIndicator {
     private var pendingCompletionWorkItem: DispatchWorkItem?
     private var completionUsesProcessing = false
     private let voiceAnimationFilter = VoiceAnimationFilter()
+    private var voiceEnvelope = VoiceAnimationEnvelope()
+    private let audioLevelMailbox = LatestAudioLevel()
     private var targetDisplayID: NSNumber?
+    private var hiddenAtUptime = ProcessInfo.processInfo.systemUptime
 
     init() {
         rebuildPanels()
@@ -612,6 +682,9 @@ private final class EdgeIndicator {
 
     func show(_ state: EdgeState) {
         let previousState = currentState
+        if currentState == .hidden && ProcessInfo.processInfo.systemUptime - hiddenAtUptime >= 60 {
+            rebuildPanels()
+        }
         if state != .processing {
             pendingCompletionWorkItem?.cancel()
             pendingCompletionWorkItem = nil
@@ -623,7 +696,9 @@ private final class EdgeIndicator {
         }
         ensureCurrentScreens()
         if state == .recording && previousState != .recording {
+            _ = audioLevelMailbox.take()
             voiceAnimationFilter.beginRecording()
+            voiceEnvelope = VoiceAnimationEnvelope()
             currentAudioLevel = 0
             currentAudioProfile = Array(repeating: 0, count: 23)
             orbMotionPhase = 0
@@ -654,18 +729,13 @@ private final class EdgeIndicator {
         timer?.invalidate()
         if state == .recording {
             lastAnimationUptime = ProcessInfo.processInfo.systemUptime
-            let recordingTimer = Timer(
-                timeInterval: animationInterval,
-                repeats: true
-            ) {
+            let recordingTimer = OrbAnimationClock(view: animationView) {
                 [weak self] _ in
                 guard let self else { return }
                 let now = ProcessInfo.processInfo.systemUptime
-                let elapsed = min(
-                    1.0 / 30.0,
-                    max(0, now - self.lastAnimationUptime)
-                )
+                let elapsed = VoiceOrbMotion.frameElapsed(since: self.lastAnimationUptime, now: now)
                 self.lastAnimationUptime = now
+                self.consumeAudioLevel(elapsed: elapsed)
                 self.appearanceProgress = min(
                     1,
                     self.appearanceProgress +
@@ -676,11 +746,7 @@ private final class EdgeIndicator {
                     self.orbMotionSpeed *
                     VoiceOrbMotion.speedScale
                 let flowSpeed =
-                    1.55 +
-                    (
-                        self.currentAudioLevel * 2.40 +
-                        min(2.00, self.orbMotionSpeed * 0.15)
-                    ) * VoiceOrbMotion.voiceResponseScale
+                    VoiceOrbMotion.flowSpeed(level: self.currentAudioLevel)
                 self.phase +=
                     elapsed * flowSpeed * VoiceOrbMotion.speedScale
                 for surface in self.surfaces {
@@ -690,25 +756,20 @@ private final class EdgeIndicator {
                         surface.view.appearanceProgress =
                             self.appearanceProgress
                         surface.view.processingProgress = 0
+                        surface.view.audioLevel = self.currentAudioLevel
+                        surface.view.audioProfile = self.currentAudioProfile
                     }
                 }
-                self.updatePointerDissipation()
+                self.renderActiveFrame()
             }
             timer = recordingTimer
-            RunLoop.main.add(recordingTimer, forMode: .common)
         } else if state == .processing {
             lastAnimationUptime = ProcessInfo.processInfo.systemUptime
-            let processingTimer = Timer(
-                timeInterval: animationInterval,
-                repeats: true
-            ) {
+            let processingTimer = OrbAnimationClock(view: animationView) {
                 [weak self] _ in
                 guard let self else { return }
                 let now = ProcessInfo.processInfo.systemUptime
-                let elapsed = min(
-                    1.0 / 30.0,
-                    max(0, now - self.lastAnimationUptime)
-                )
+                let elapsed = VoiceOrbMotion.frameElapsed(since: self.lastAnimationUptime, now: now)
                 self.lastAnimationUptime = now
                 self.appearanceProgress = min(
                     1,
@@ -722,11 +783,7 @@ private final class EdgeIndicator {
                     self.orbMotionSpeed *
                     VoiceOrbMotion.speedScale
                 let flowSpeed =
-                    1.55 +
-                    (
-                        self.currentAudioLevel * 2.40 +
-                        min(2.00, self.orbMotionSpeed * 0.15)
-                    ) * VoiceOrbMotion.voiceResponseScale
+                    VoiceOrbMotion.flowSpeed(level: self.currentAudioLevel)
                 self.phase +=
                     elapsed * flowSpeed * VoiceOrbMotion.speedScale
                 let pulse = (sin(self.breathPhase) + 1) / 2
@@ -744,12 +801,11 @@ private final class EdgeIndicator {
                             self.currentAudioProfile
                     }
                 }
-                self.updatePointerDissipation()
+                self.renderActiveFrame()
             }
             timer = processingTimer
-            RunLoop.main.add(processingTimer, forMode: .common)
         } else if state == .error {
-            timer = Timer.scheduledTimer(withTimeInterval: 1.2, repeats: false) {
+            timer = OrbAnimationClock(delay: 1.2) {
                 [weak self] _ in self?.hide()
             }
         }
@@ -827,10 +883,7 @@ private final class EdgeIndicator {
         lastAnimationUptime = startedAt
         let duration =
             TimeInterval(VoiceOrbMotion.completionTransitionDuration)
-        let completionTimer = Timer(
-            timeInterval: animationInterval,
-            repeats: true
-        ) { [weak self] timer in
+        let completionTimer = OrbAnimationClock(view: animationView) { [weak self] timer in
             guard let self else {
                 timer.invalidate()
                 return
@@ -854,11 +907,7 @@ private final class EdgeIndicator {
                 self.orbMotionSpeed *
                 VoiceOrbMotion.speedScale
             let flowSpeed =
-                1.55 +
-                (
-                    self.currentAudioLevel * 2.40 +
-                    min(2.00, self.orbMotionSpeed * 0.15)
-                ) * VoiceOrbMotion.voiceResponseScale
+                VoiceOrbMotion.flowSpeed(level: self.currentAudioLevel)
             self.phase +=
                 frameElapsed * flowSpeed * VoiceOrbMotion.speedScale
             let pulse = (sin(self.breathPhase) + 1) / 2
@@ -879,7 +928,7 @@ private final class EdgeIndicator {
                         self.currentAudioProfile
                 }
             }
-            self.updatePointerDissipation()
+            self.renderActiveFrame()
             if progress >= 1 {
                 timer.invalidate()
                 self.hide()
@@ -887,7 +936,6 @@ private final class EdgeIndicator {
             }
         }
         timer = completionTimer
-        RunLoop.main.add(completionTimer, forMode: .common)
     }
 
     private func advanceProcessingTransition(elapsed: CGFloat) {
@@ -906,68 +954,27 @@ private final class EdgeIndicator {
             settling
     }
 
-    func setAudioLevel(_ level: Float, spectrum: [Float]) {
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            let conditioned = self.voiceAnimationFilter.process(
-                level: level,
-                spectrum: spectrum
-            )
-            let target = CGFloat(
-                VoiceAnimationFilter.visualResponse(
-                    for: conditioned.level
-                )
-            )
-            let responsiveness: CGFloat =
-                target > self.currentAudioLevel ? 0.72 : 0.28
-            self.currentAudioLevel +=
-                (target - self.currentAudioLevel) * responsiveness
+    func setAudioLevel(_ level: Float, spectrum: [Float], voiceProbability: Float? = nil) {
+        audioLevelMailbox.store(level: level, spectrum: spectrum, voiceProbability: voiceProbability)
+    }
 
-            let strongestBand = conditioned.spectrum.max() ?? 0
-            var spectralFlux: CGFloat = 0
-            for index in self.currentAudioProfile.indices {
-                let relativeEnergy: CGFloat
-                if strongestBand > 0,
-                   conditioned.spectrum.indices.contains(index) {
-                    relativeEnergy = CGFloat(
-                        max(
-                            0,
-                            min(
-                                1,
-                                conditioned.spectrum[index] / strongestBand
-                            )
-                        )
-                    )
-                } else {
-                    relativeEnergy = 0
-                }
-                // Log-like compression preserves the spectral shape while the
-                // measured full-band RMS controls its absolute visual size.
-                let spectralShape = pow(relativeEnergy, 0.42)
-                let bandTarget = target * spectralShape
-                spectralFlux += abs(
-                    bandTarget - self.currentAudioProfile[index]
-                )
-                let bandResponsiveness: CGFloat =
-                    bandTarget > self.currentAudioProfile[index] ? 0.76 : 0.24
-                self.currentAudioProfile[index] +=
-                    (bandTarget - self.currentAudioProfile[index]) *
-                    bandResponsiveness
-            }
-            spectralFlux /= CGFloat(max(1, self.currentAudioProfile.count))
-            let targetMotionSpeed =
-                0.35 +
-                self.currentAudioLevel * 11.5 +
-                min(5.0, spectralFlux * 60)
-            self.orbMotionSpeed +=
-                (targetMotionSpeed - self.orbMotionSpeed) * 0.42
-            for surface in self.surfaces {
-                surface.view.performVisualUpdate {
-                    surface.view.audioLevel = self.currentAudioLevel
-                    surface.view.audioProfile = self.currentAudioProfile
-                }
-            }
-            self.updatePointerDissipation()
+    private func consumeAudioLevel(elapsed: CGFloat) {
+        if let sample = audioLevelMailbox.take() {
+            voiceEnvelope.accept(voiceAnimationFilter.process(
+                level: sample.level, spectrum: sample.spectrum,
+                voiceProbability: sample.voiceProbability
+            ))
+        }
+        voiceEnvelope.advance(elapsed: elapsed)
+        currentAudioLevel = CGFloat(voiceEnvelope.level)
+        currentAudioProfile = voiceEnvelope.spectrum.map { CGFloat($0) }
+        orbMotionSpeed = VoiceOrbMotion.voiceSpeed(level: currentAudioLevel)
+    }
+
+    private func renderActiveFrame() {
+        updatePointerDissipation()
+        for surface in surfaces where surface.displayID == targetDisplayID {
+            surface.view.renderFrame()
         }
     }
 
@@ -979,6 +986,7 @@ private final class EdgeIndicator {
         timer = nil
         completionUsesProcessing = false
         currentState = .hidden
+        hiddenAtUptime = ProcessInfo.processInfo.systemUptime
         targetDisplayID = nil
         processingProgress = 0
         for surface in surfaces {
@@ -995,6 +1003,7 @@ private final class EdgeIndicator {
         surfaces = NSScreen.screens.compactMap(makeSurface)
         for surface in oldSurfaces {
             surface.panel.orderOut(nil)
+            surface.panel.close()
         }
         if let targetDisplayID,
            !surfaces.contains(where: { $0.displayID == targetDisplayID }) {
@@ -1005,6 +1014,7 @@ private final class EdgeIndicator {
                 targetDisplayID = resolveTargetDisplay().displayID
             }
             presentPanels()
+            timer?.retarget(to: animationView)
         }
         DiagnosticLog.write(
             "Edge indicator panels rebuilt displays=\(surfaces.count)"
@@ -1050,13 +1060,8 @@ private final class EdgeIndicator {
         return Surface(displayID: displayID, panel: panel, view: indicatorView)
     }
 
-    private var animationInterval: TimeInterval {
-        let display = targetDisplayID.flatMap(screen(for:))
-        let framesPerSecond = max(
-            60,
-            min(120, display?.maximumFramesPerSecond ?? 60)
-        )
-        return 1 / TimeInterval(framesPerSecond)
+    private var animationView: NSView? {
+        surfaces.first { $0.displayID == targetDisplayID }?.view
     }
 
     private func panelFrame(on screen: NSScreen) -> NSRect {
@@ -1154,6 +1159,7 @@ private final class EdgeIndicator {
                 surface.view.orbMotionPhase = orbMotionPhase
             }
             surface.panel.orderFrontRegardless()
+            surface.view.redrawAfterPresentation()
             surface.panel.displayIfNeeded()
         }
         updatePointerDissipation()
@@ -1337,7 +1343,7 @@ private struct RecordedAudio {
 
 private final class AudioRecorder {
     private var engine = AVAudioEngine()
-    private let spectrumAnalyzer = LogSpectrumAnalyzer()
+    private let voiceAnalyzer = VoiceActivityAnalyzer()
     private let metricsLock = NSLock()
     private let speechLevelThreshold: Float = 0.006
     private var routeTracker = AudioInputRouteTracker()
@@ -1383,7 +1389,7 @@ private final class AudioRecorder {
         }
     }
 
-    func start(level: @escaping (Float, [Float]) -> Void) throws {
+    func start(level: @escaping VoiceActivityAnalyzer.Handler) throws {
         let beganAt = CACurrentMediaTime()
         let device = try SystemAudioInput.preferredDevice()
         if routeTracker.requiresEngineReplacement(for: device.id) {
@@ -1420,6 +1426,7 @@ private final class AudioRecorder {
         voicedSeconds = 0
         metricsLock.unlock()
 
+        voiceAnalyzer.start(handler: level)
         input.installTap(onBus: 0, bufferSize: 1024, format: format) {
             [weak self] buffer, _ in
             guard let self else { return }
@@ -1436,14 +1443,7 @@ private final class AudioRecorder {
                     sum += samples[index] * samples[index]
                 }
                 let rms = sqrt(sum / Float(buffer.frameLength))
-                let spectrum = self.spectrumAnalyzer?.process(
-                    samples: samples,
-                    frameCount: Int(buffer.frameLength),
-                    sampleRate: format.sampleRate
-                ) ?? Array(
-                    repeating: 0,
-                    count: LogSpectrumAnalyzer.defaultBandCount
-                )
+                self.voiceAnalyzer.submit(samples: samples, count: Int(buffer.frameLength), sampleRate: format.sampleRate)
                 let bufferSeconds = Double(buffer.frameLength) / format.sampleRate
                 self.metricsLock.lock()
                 self.peakLevel = max(self.peakLevel, rms)
@@ -1451,7 +1451,6 @@ private final class AudioRecorder {
                     self.voicedSeconds += bufferSeconds
                 }
                 self.metricsLock.unlock()
-                level(rms, spectrum)
             }
         }
 
@@ -1474,6 +1473,7 @@ private final class AudioRecorder {
             )
         } catch {
             input.removeTap(onBus: 0)
+            voiceAnalyzer.stop()
             file = nil
             recordingURL = nil
             startedAt = nil
@@ -1483,6 +1483,7 @@ private final class AudioRecorder {
     }
 
     func stop() -> RecordedAudio? {
+        voiceAnalyzer.stop()
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
         file = nil
@@ -2619,26 +2620,34 @@ private struct PasteboardSnapshot {
 
 private final class AppDelegate:
     NSObject,
-    NSApplicationDelegate,
-    NSMenuDelegate
+    NSApplicationDelegate
 {
     private let recorder = AudioRecorder()
     private let transcriptionEngine = TranscriptionEngine()
     private let capsLock = GlobalCapsLock()
     private let indicator = EdgeIndicator()
     private let statistics = StatisticsStore()
+    private let history = TranscriptHistory(url: FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent("Library/Application Support/EdgeWhisper/History/transcripts.json"))
+    private let transcriptModel = TranscriptWindowModel()
+    private var transcriptWindow: TranscriptWindowController?
+    private let computerRecorder = ComputerAudioRecorder()
+    private let computerVoiceAnalyzer = VoiceActivityAnalyzer()
+    private let microphoneVoiceAnalyzer = VoiceActivityAnalyzer()
+    private let combinedVoiceLevels = CombinedVoiceLevels()
+    private var computerTransition = false
+    private var recordingSessions: [UUID: RecordingSession] = [:]
+    private var activeRecordingSession: RecordingSession?
+    private var failedRecordingSessions = Set<UUID>()
+    private var sessionChunkInFlight = false
+    private var recordingSessionsRoot: URL { supportDirectory.appendingPathComponent("RecordingSessions") }
+    private var recordingStartedAt = Date()
+    private var recordingClock: Timer?
+    private let computerLevelMailbox = LatestAudioLevel()
     private let audioPreparationQueue = DispatchQueue(
         label: "com.joslack.luxit.audio-preparation",
         qos: .userInitiated
     )
-    private let statusMenu = NSMenu()
-    private let statusSummaryItem = NSMenuItem()
-    private let usageAudioItem = NSMenuItem()
-    private let usagePerformanceItem = NSMenuItem()
-    private let modelRootItem = NSMenuItem()
-    private let modelMenu = NSMenu()
-    private let permissionsItem = NSMenuItem()
-    private var modelMenuItems: [SelectedTranscriptionProfile: NSMenuItem] = [:]
     private var state: DictationState = .idle
     private var pendingTranscriptions = 0
     private var nextJobID = 1
@@ -2685,10 +2694,12 @@ private final class AppDelegate:
     func applicationDidFinishLaunching(_ notification: Notification) {
         DiagnosticLog.write("App launched")
         NSApp.setActivationPolicy(.accessory)
+        configureTranscriptHistory()
         setupStatusItem()
         createDefaultPrompt()
         checkPermissionsAndStartShortcut(prompt: false)
         verifyModel()
+        recoverRecordingSessions()
 
         NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification,
@@ -2718,7 +2729,7 @@ private final class AppDelegate:
         _ sender: NSApplication,
         hasVisibleWindows flag: Bool
     ) -> Bool {
-        showPopover()
+        openTranscriptHistory()
         return false
     }
 
@@ -2793,112 +2804,324 @@ private final class AppDelegate:
             )
             button.image?.isTemplate = true
             button.imageScaling = .scaleProportionallyDown
-            button.toolTip = "Luxit — click for stats and controls"
+            button.toolTip = "Luxit — transcripts and recording"
+            button.target = self
+            button.action = #selector(toggleTranscriptPanel)
+            button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         }
 
-        configureStatusMenu()
-        statusItem.menu = statusMenu
-        refreshStatusMenu()
+        refreshSettings()
     }
 
-    private func configureStatusMenu() {
-        statusMenu.delegate = self
-        statusMenu.autoenablesItems = false
-
-        statusMenu.addItem(.sectionHeader(title: "Luxit"))
-        statusSummaryItem.isEnabled = false
-        statusMenu.addItem(statusSummaryItem)
-        statusMenu.addItem(.separator())
-
-        statusMenu.addItem(.sectionHeader(title: "Usage"))
-        usageAudioItem.isEnabled = false
-        usagePerformanceItem.isEnabled = false
-        statusMenu.addItem(usageAudioItem)
-        statusMenu.addItem(usagePerformanceItem)
-        statusMenu.addItem(.separator())
-
-        modelRootItem.submenu = modelMenu
-        statusMenu.addItem(modelRootItem)
-        for model in SelectedTranscriptionProfile.rankedProfiles {
-            let item = NSMenuItem(
-                title: model.displayName,
-                action: #selector(selectModelMenuItem(_:)),
-                keyEquivalent: ""
-            )
-            item.target = self
-            item.representedObject = model.rawValue
-            modelMenu.addItem(item)
-            modelMenuItems[model] = item
+    private func configureTranscriptHistory() {
+        transcriptModel.entries = history.entries
+        transcriptModel.selectedID = history.entries.first?.id
+        if let error = history.error {
+            transcriptModel.error = "Could not read history: \(error.localizedDescription)"
         }
+        let settings = transcriptModel.settings
+        settings.onSelectModel = { [weak self] id in
+            guard let model = SelectedTranscriptionProfile(rawValue: id) else { return }
+            self?.selectModel(model)
+        }
+        settings.onPermissions = { [weak self] in self?.openPermissions() }
+        settings.onVocabulary = { [weak self] in self?.openPrompt() }
+        settings.onReveal = { [weak self] in self?.showInApplications() }
+        settings.onRestart = { [weak self] in self?.requestExit(restart: true) }
+        settings.onQuit = { [weak self] in self?.requestExit(restart: false) }
+        transcriptModel.onSettings = { [weak self] in self?.showSettings() }
+        transcriptModel.onRecord = { [weak self] in self?.startComputerRecording() }
+        transcriptModel.onPause = { [weak self] in self?.pauseComputerRecording() }
+        transcriptModel.onStop = { [weak self] in self?.stopComputerRecording() }
+        transcriptModel.onRetry = { [weak self] id in
+            guard let self, let session = self.recordingSessions[id] else { return }
+            do {
+                if self.activeRecordingSession !== session { try session.finish(duration: session.snapshot.duration) }
+                self.failedRecordingSessions.remove(id)
+                self.transcriptModel.error = nil
+                try self.saveRecordingSession(session)
+                self.pumpRecordingChunks()
+            } catch { self.transcriptModel.error = "Could not retry: \(error.localizedDescription)" }
+        }
+        computerRecorder.onChunksReady = { [weak self] in
+            guard let self else { return }
+            if let session = self.activeRecordingSession {
+                do { try self.saveRecordingSession(session) }
+                catch { self.transcriptModel.error = "Could not update history. The recording is still saved locally: \(error.localizedDescription)" }
+            }
+            self.pumpRecordingChunks()
+        }
+        transcriptModel.onDelete = { [weak self] id in
+            guard let self else { return }
+            guard self.activeRecordingSession?.snapshot.id != id,
+                  self.history.entries.first(where: { $0.id == id })?.recordingState?.inProgress != true else { return }
+            do {
+                if let session = self.recordingSessions[id] {
+                    try FileManager.default.removeItem(at: session.directory)
+                    self.recordingSessions.removeValue(forKey: id)
+                    self.failedRecordingSessions.remove(id)
+                }
+                try self.history.delete(id: id)
+                self.transcriptModel.entries = self.history.entries
+                self.transcriptModel.selectedID = self.history.entries.first?.id
+            } catch {
+                self.transcriptModel.error = "Could not delete transcript: \(error.localizedDescription)"
+            }
+        }
+        computerRecorder.onLevel = { [weak self] level in
+            self?.computerLevelMailbox.store(level: level)
 
-        statusMenu.addItem(.separator())
-
-        permissionsItem.title = "Permissions"
-        permissionsItem.target = self
-        permissionsItem.action = #selector(openPermissionsMenuItem)
-        statusMenu.addItem(permissionsItem)
-        statusMenu.addItem(menuItem(
-            title: "Vocabulary",
-            action: #selector(openVocabularyMenuItem)
-        ))
-        statusMenu.addItem(menuItem(
-            title: "Show Luxit in Applications",
-            action: #selector(showInApplicationsMenuItem)
-        ))
-        statusMenu.addItem(.separator())
-        statusMenu.addItem(menuItem(
-            title: "Restart Luxit",
-            action: #selector(restartMenuItem)
-        ))
-        statusMenu.addItem(menuItem(
-            title: "Quit Luxit",
-            action: #selector(quitMenuItem)
-        ))
+        }
+        computerRecorder.onAudio = { [weak self] type, samples, count, rate in
+            guard let self else { return }
+            let analyzer = type == .microphone ? self.microphoneVoiceAnalyzer : self.computerVoiceAnalyzer
+            analyzer.submit(samples: samples, count: count, sampleRate: rate)
+        }
+        computerRecorder.onFailure = { [weak self] error in
+            guard let self, self.state == .computerRecording else { return }
+            self.transcriptModel.error = "Recording interrupted: \(error.localizedDescription)"
+            self.stopComputerRecording()
+        }
     }
 
-    private func menuItem(title: String, action: Selector) -> NSMenuItem {
-        let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
-        item.target = self
-        return item
+    @objc private func openTranscriptHistory() {
+        if transcriptWindow == nil { transcriptWindow = TranscriptWindowController(model: transcriptModel) }
+        transcriptWindow?.present()
     }
 
-    private func showPopover() {
-        refreshStatusMenu()
-        statusItem.button?.performClick(nil)
+    private func recoverRecordingSessions() {
+        guard FileManager.default.fileExists(atPath: recordingSessionsRoot.path) else { return }
+        do {
+            let directories = try FileManager.default.contentsOfDirectory(at: recordingSessionsRoot,
+                includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles])
+            for directory in directories where FileManager.default.fileExists(atPath: directory.appendingPathComponent("session.json").path) {
+                do {
+                    let session = try RecordingSession(recovering: directory)
+                    recordingSessions[session.snapshot.id] = session
+                    try saveRecordingSession(session)
+                } catch {
+                    transcriptModel.error = "A recording needs recovery. Its audio is still saved on this Mac: \(error.localizedDescription)"
+                }
+            }
+            pumpRecordingChunks()
+        } catch { transcriptModel.error = "Could not recover recordings: \(error.localizedDescription)" }
     }
 
-    func menuNeedsUpdate(_ menu: NSMenu) {
-        guard menu === statusMenu else { return }
-        refreshStatusMenu()
+    private func saveRecordingSession(_ session: RecordingSession) throws {
+        let snapshot = session.snapshot
+        let state: RecordingTranscriptState = failedRecordingSessions.contains(snapshot.id) ? .failed :
+            (snapshot.complete ? .complete : (snapshot.stopped ? .processing : .recording))
+        let entry = snapshot.entry(state: state)
+        do {
+            try history.append(entry)
+            transcriptModel.entries = history.entries
+        } catch {
+            // Keep Copy and Retry usable even when the history file cannot be
+            // written. The independent audio/text journal remains recoverable.
+            transcriptModel.entries = ([entry] + transcriptModel.entries.filter { $0.id != entry.id })
+                .sorted { $0.createdAt > $1.createdAt }
+            throw error
+        }
+        if snapshot.complete && !failedRecordingSessions.contains(snapshot.id) {
+            // History is durable before the audio journal is removed.
+            if FileManager.default.fileExists(atPath: session.directory.path) { try FileManager.default.removeItem(at: session.directory) }
+            recordingSessions.removeValue(forKey: snapshot.id)
+        }
     }
 
-    func menuWillOpen(_ menu: NSMenu) {
-        guard menu === statusMenu else { return }
-        DiagnosticLog.write("Native status menu opened")
+    private func pumpRecordingChunks() {
+        guard !exitRequested, !sessionChunkInFlight, pendingTranscriptions == 0, state != .recording,
+              pendingModelActivation == nil, let modelURL = selectedModelURL else { return }
+        let candidates = recordingSessions.values.filter { !failedRecordingSessions.contains($0.snapshot.id) }
+            .sorted { $0.snapshot.createdAt < $1.snapshot.createdAt }
+        guard let session = candidates.first(where: { !$0.snapshot.pending.isEmpty }),
+              let chunk = session.snapshot.pending.first else { return }
+        sessionChunkInFlight = true
+        pendingTranscriptions += 1
+        refreshActivityUI()
+        let profile = selectedModel
+        let started = Date()
+        let finish: (Result<String, Error>) -> Void = { [weak self] result in
+            guard let self else { return }
+            self.sessionChunkInFlight = false
+            self.pendingTranscriptions = max(0, self.pendingTranscriptions - 1)
+            do {
+                let text = try result.get().trimmingCharacters(in: .whitespacesAndNewlines)
+                try session.complete(chunkID: chunk.id, text: text)
+                try self.saveRecordingSession(session)
+                session.removeCompletedAudio(chunk: chunk)
+                if !text.isEmpty {
+                    self.statistics.record(audioSeconds: max(0, chunk.duration - chunk.overlap),
+                                           processingSeconds: Date().timeIntervalSince(started), text: text)
+                }
+            } catch {
+                self.failedRecordingSessions.insert(session.snapshot.id)
+                try? self.saveRecordingSession(session)
+                self.transcriptModel.error = "A recording chunk could not finish. Audio is saved locally; use Retry in its transcript. \(error.localizedDescription)"
+            }
+            self.refreshActivityUI()
+            self.pumpRecordingChunks()
+        }
+        transcriptionEngine.load(profile: profile, modelURL: modelURL) { [weak self] result in
+            guard let self else { return }
+            if case .failure(let error) = result { finish(.failure(error)); return }
+            self.audioPreparationQueue.async {
+                do {
+                    let wav = try session.makeWAV(chunk: chunk)
+                    let prompt = (try? String(contentsOf: self.promptURL, encoding: .utf8)) ?? ""
+                    self.transcriptionEngine.transcribe(profile: profile, wavURL: wav,
+                        vadModelURL: self.vadModelURL, prompt: prompt, completion: finish)
+                } catch { DispatchQueue.main.async { finish(.failure(error)) } }
+            }
+        }
     }
 
-    func menuDidClose(_ menu: NSMenu) {
-        guard menu === statusMenu else { return }
-        DiagnosticLog.write("Native status menu closed")
+    private func startComputerRecording() {
+        guard state == .idle, pendingTranscriptions < maximumPendingTranscriptions else { return }
+        guard let modelURL = selectedModelURL else {
+            transcriptModel.error = "Choose an installed transcription model from the Luxit menu first."
+            return
+        }
+        let session: RecordingSession
+        do {
+            session = try RecordingSession(root: recordingSessionsRoot)
+            recordingSessions[session.snapshot.id] = session
+            try saveRecordingSession(session)
+        } catch { transcriptModel.error = "Could not save recording: \(error.localizedDescription)"; return }
+        activeRecordingSession = session
+        transcriptModel.activeRecordingID = session.snapshot.id
+        transcriptModel.selectedID = session.snapshot.id
+        transcriptModel.selectedTab = 1
+        // These processors consume every source buffer for segmentation. The
+        // independent animation analyzers may discard stale visualization work.
+        let detectors = [VoiceActivityProcessor(modelURL: VoiceActivityAnalyzer.modelURL),
+                         VoiceActivityProcessor(modelURL: VoiceActivityAnalyzer.modelURL)]
+        computerRecorder.classifySpeech = { type, samples, count in
+            let frames = detectors[type == .microphone ? 0 : 1].process(
+                samples: Array(UnsafeBufferPointer(start: samples, count: count)), sampleRate: 16_000)
+            return frames.contains { ($0.voiceProbability ?? ($0.level > 0.001 ? 1 : 0)) > 0.35 }
+        }
+        state = .computerRecording
+        computerTransition = true
+        transcriptModel.error = nil
+        transcriptModel.meter.elapsed = 0
+        transcriptModel.paused = false
+        setStatus("Starting computer + microphone recording…", symbol: "record.circle")
+        recordingStartedAt = Date()
+        combinedVoiceLevels.reset()
+        for (source, analyzer) in [computerVoiceAnalyzer, microphoneVoiceAnalyzer].enumerated() {
+            analyzer.start { [weak self] level, spectrum, probability in
+                guard let self else { return }
+                let frame = self.combinedVoiceLevels.update(source: source, level: level, spectrum: spectrum,
+                                                           probability: probability)
+                self.indicator.setAudioLevel(frame.level, spectrum: frame.spectrum, voiceProbability: frame.voiceProbability)
+            }
+        }
+        computerRecorder.start(session: session) { [weak self] result in
+            guard let self else { return }
+            self.computerTransition = false
+            switch result {
+            case .success:
+                self.transcriptModel.recording = true
+                self.indicator.show(.recording)
+                self.refreshActivityUI()
+                let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
+                    guard let self else { return }
+                    let seconds = floor(self.computerRecorder.duration)
+                    if self.transcriptModel.meter.elapsed != seconds {
+                        self.transcriptModel.meter.elapsed = seconds
+                    }
+                    if let sample = self.computerLevelMailbox.take(), !self.transcriptModel.paused,
+                       self.transcriptWindow?.window?.isVisible == true {
+                        self.transcriptModel.meter.level = sample.level
+                    }
+                }
+                self.recordingClock = timer
+                RunLoop.main.add(timer, forMode: .common)
+                self.transcriptionEngine.load(profile: self.selectedModel, modelURL: modelURL) { [weak self] result in
+                    if case .failure(let error) = result {
+                        self?.transcriptModel.error = "Model error: \(error.localizedDescription)"
+                    }
+                }
+            case .failure(let error):
+                self.computerVoiceAnalyzer.stop()
+                self.microphoneVoiceAnalyzer.stop()
+                self.state = .idle
+                try? session.finish(duration: 0)
+                self.activeRecordingSession = nil
+                self.transcriptModel.activeRecordingID = nil
+                self.failedRecordingSessions.insert(session.snapshot.id)
+                try? self.saveRecordingSession(session)
+                self.transcriptModel.error = "Could not record: \(error.localizedDescription). Check Microphone and Screen & System Audio Recording in System Settings → Privacy & Security."
+                self.refreshActivityUI()
+            }
+        }
     }
 
-    @objc private func selectModelMenuItem(_ sender: NSMenuItem) {
-        guard
-            let rawValue = sender.representedObject as? String,
-            let model = SelectedTranscriptionProfile(rawValue: rawValue)
-        else { return }
-        selectModel(model)
+    private func pauseComputerRecording() {
+        guard state == .computerRecording, !computerTransition else { return }
+        transcriptModel.paused.toggle()
+        transcriptModel.meter.level = 0
+        _ = computerLevelMailbox.take()
+        computerRecorder.setPaused(transcriptModel.paused)
+        computerVoiceAnalyzer.reset()
+        microphoneVoiceAnalyzer.reset()
+        combinedVoiceLevels.reset()
+        if transcriptModel.paused { indicator.hide() } else { indicator.show(.recording) }
+        refreshActivityUI()
     }
 
-    @objc private func openPermissionsMenuItem() { openPermissions() }
-    @objc private func openVocabularyMenuItem() { openPrompt() }
-    @objc private func showInApplicationsMenuItem() { showInApplications() }
-    @objc private func restartMenuItem() { requestExit(restart: true) }
-    @objc private func quitMenuItem() { requestExit(restart: false) }
+    private func stopComputerRecording() {
+        guard state == .computerRecording, !computerTransition else { return }
+        computerTransition = true
+        recordingClock?.invalidate()
+        recordingClock = nil
+        transcriptModel.busy = true
+        transcriptModel.message = "Preparing recording…"
+        indicator.show(.processing)
+        let session = activeRecordingSession
+        computerVoiceAnalyzer.stop()
+        microphoneVoiceAnalyzer.stop()
+        computerRecorder.stop { [weak self] result in
+            guard let self else { return }
+            self.computerTransition = false
+            self.transcriptModel.recording = false
+            self.transcriptModel.paused = false
+            self.state = .idle
+            self.activeRecordingSession = nil
+            self.transcriptModel.activeRecordingID = nil
+            if let session {
+                do { try self.saveRecordingSession(session) }
+                catch { self.transcriptModel.error = "Could not save transcript: \(error.localizedDescription). Audio remains saved locally." }
+            }
+            if case .failure(let error) = result {
+                self.transcriptModel.error = "Recording interrupted: \(error.localizedDescription). Captured audio remains saved locally."
+            }
+            self.pumpRecordingChunks()
+            self.refreshActivityUI()
+        }
+    }
+
+    @objc private func toggleTranscriptPanel() {
+        if NSApp.currentEvent?.type == .rightMouseUp {
+            showSettings()
+        } else {
+            if transcriptWindow == nil { transcriptWindow = TranscriptWindowController(model: transcriptModel) }
+            transcriptWindow?.toggle()
+        }
+    }
+
+    private func showSettings() {
+        refreshSettings()
+        transcriptModel.showingSettings = true
+        if transcriptWindow == nil { transcriptWindow = TranscriptWindowController(model: transcriptModel) }
+        transcriptWindow?.present()
+    }
 
     private func selectModel(_ model: SelectedTranscriptionProfile) {
         guard model != selectedModel else {
-            refreshStatusMenu()
+            refreshSettings()
+            pumpRecordingChunks()
             return
         }
         guard state == .idle, pendingTranscriptions == 0 else {
@@ -2955,6 +3178,7 @@ private final class AppDelegate:
                 symbol: "mic.circle.fill"
             )
             DiagnosticLog.write("Model selected model=\(model.rawValue)")
+            self.pumpRecordingChunks()
         }
     }
 
@@ -3106,8 +3330,23 @@ private final class AppDelegate:
 
     private func requestExit(restart: Bool) {
         guard !exitRequested else { return }
+        if state == .computerRecording {
+            guard !computerTransition else {
+                transcriptModel.error = "Wait for the recorder to finish starting or stopping, then quit."
+                openTranscriptHistory()
+                return
+            }
+            computerTransition = true
+            recordingClock?.invalidate()
+            computerRecorder.stop { [weak self] _ in
+                if let self, let session = self.activeRecordingSession { try? self.saveRecordingSession(session) }
+                self?.state = .idle
+                self?.computerTransition = false
+                self?.requestExit(restart: restart)
+            }
+            return
+        }
         exitRequested = true
-        statusMenu.cancelTrackingWithoutAnimation()
         if state == .recording, let recorded = recorder.stop() {
             try? FileManager.default.removeItem(at: recorded.url)
             state = .idle
@@ -3156,87 +3395,44 @@ private final class AppDelegate:
 
     private func setStatus(_ text: String, symbol: String) {
         statusText = text
+        transcriptModel.message = text
+        transcriptModel.busy = state == .recording || computerTransition ||
+            (pendingTranscriptions >= maximumPendingTranscriptions && !transcriptModel.recording)
         statusItem.button?.image = NSImage(
             systemSymbolName: symbol,
             accessibilityDescription: text
         )
         statusItem.button?.image?.isTemplate = true
         statusItem.button?.toolTip = "Luxit — \(text)"
-        refreshStatusMenu()
+        refreshSettings()
     }
 
-    private func refreshStatusMenu() {
-        let microphone = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+    private func refreshSettings() {
+        let settings = transcriptModel.settings
         let snapshot = statistics.snapshot
-        let displayedModel =
-            pendingModelActivation ?? selectedModel
-        let modelSelectionEnabled =
-            pendingModelActivation == nil &&
-            state == .idle &&
-            pendingTranscriptions == 0
-
-        statusSummaryItem.title = statusText
-        statusSummaryItem.subtitle = displayedModel.displayName
-
-        usageAudioItem.title = String(
-            format: "%.2f hours transcribed",
-            snapshot.audioSeconds / 3600
-        )
-        usageAudioItem.subtitle =
-            "\(snapshot.words.formatted()) words · " +
-            "\(snapshot.dictations.formatted()) dictations"
-
-        if snapshot.dictations == 0 {
-            usagePerformanceItem.title = "No completed dictations"
-            usagePerformanceItem.subtitle = "Performance appears after the first transcription"
-        } else {
-            usagePerformanceItem.title = String(
-                format: "%.1f× realtime",
-                snapshot.realtimeSpeed
-            )
-            usagePerformanceItem.subtitle = String(
-                format: "%.1fs average transcription time",
-                snapshot.averageLatency
-            )
-        }
-
-        modelRootItem.title = "Transcription Model"
-        modelRootItem.subtitle = displayedModel.displayName
-        modelRootItem.isEnabled = true
-        for model in SelectedTranscriptionProfile.rankedProfiles {
-            guard let item = modelMenuItems[model] else { continue }
+        let displayedModel = pendingModelActivation ?? selectedModel
+        settings.selectedModelID = displayedModel.rawValue
+        settings.selectedModelName = displayedModel.displayName
+        settings.canSelectModel = pendingModelActivation == nil && state == .idle && pendingTranscriptions == 0
+        settings.usage = String(format: "%.2f hours · %@ words · %@ dictations",
+                                snapshot.audioSeconds / 3600, snapshot.words.formatted(), snapshot.dictations.formatted())
+        settings.performance = snapshot.dictations == 0 ? "No completed dictations" :
+            String(format: "%.1f× realtime · %.1fs average transcription", snapshot.realtimeSpeed, snapshot.averageLatency)
+        settings.models = SelectedTranscriptionProfile.rankedProfiles.map { model in
             let availability = model.availability(
-                fileExists: {
-                    FileManager.default.fileExists(atPath: $0)
-                },
-                commandExists: commandExists
-            )
-            item.title = model.displayName
-            item.subtitle =
-                "\(model.warmHint) · \(reasonForAvailability(availability))"
-            item.toolTip =
-                "\(model.recommendationLabel)\n\(model.runtimeLifecycle)"
-            item.state = model == displayedModel ? .on : .off
-            item.isEnabled =
-                modelSelectionEnabled &&
-                model.supportsLocalSelection &&
-                availability.isAvailable
+                fileExists: { FileManager.default.fileExists(atPath: $0) }, commandExists: commandExists)
+            return LuxitModelOption(id: model.rawValue, title: model.displayName,
+                                    detail: "\(model.warmHint) · \(reasonForAvailability(availability))",
+                                    available: model.supportsLocalSelection && availability.isAvailable)
         }
-
-        let accessibility = AXIsProcessTrusted()
-        let inputMonitoring = capsLock.hasInputMonitoringAccess()
-        permissionsItem.subtitle = [
-            accessibility ? "Accessibility ✓" : "Accessibility needed",
-            inputMonitoring ? "Input Monitoring ✓" : "Input Monitoring needed",
-            microphone ? "Microphone ✓" : "Microphone needed"
+        settings.permissions = [
+            AXIsProcessTrusted() ? "Accessibility ✓" : "Accessibility needed",
+            capsLock.hasInputMonitoringAccess() ? "Input Monitoring ✓" : "Input Monitoring needed",
+            AVCaptureDevice.authorizationStatus(for: .audio) == .authorized ? "Microphone ✓" : "Microphone needed"
         ].joined(separator: " · ")
     }
 
     private func toggleDictation(timing: GlobalCapsLock.PressTiming) {
-        // A standard NSMenu runs a nested tracking loop. The global event tap
-        // is installed in common run-loop modes, so Caps Lock still arrives
-        // here; dismiss the menu synchronously before changing recorder state.
-        statusMenu.cancelTrackingWithoutAnimation()
         let handlerUptime = DispatchTime.now().uptimeNanoseconds
         let hardwareToCallbackMilliseconds: Double
         if timing.callbackUptimeNanoseconds >= timing.hardwareEventUptimeNanoseconds {
@@ -3263,10 +3459,18 @@ private final class AppDelegate:
             startRecording()
         case .recording:
             finishRecording()
+        case .computerRecording:
+            openTranscriptHistory()
         }
     }
 
     private func startRecording() {
+        guard let modelURL = selectedModelURL else {
+            setStatus("Model missing — choose one from the Luxit menu", symbol: "exclamationmark.triangle.fill")
+            indicator.show(.error)
+            return
+        }
+        recordingStartedAt = Date()
         guard pendingTranscriptions < maximumPendingTranscriptions else {
             setStatus(
                 "Transcription queue full (\(maximumPendingTranscriptions)) — try again shortly",
@@ -3290,19 +3494,10 @@ private final class AppDelegate:
         DiagnosticLog.write("Recording start acknowledged")
 
         do {
-            try recorder.start { [weak self] level, spectrum in
-                self?.indicator.setAudioLevel(level, spectrum: spectrum)
+            try recorder.start { [weak self] level, spectrum, probability in
+                self?.indicator.setAudioLevel(level, spectrum: spectrum, voiceProbability: probability)
             }
             DiagnosticLog.write("Recording started")
-            guard let modelURL = selectedModelURL else {
-                setStatus(
-                    "Model missing — choose one from the Luxit menu",
-                    symbol: "exclamationmark.triangle.fill"
-                )
-                indicator.show(.error)
-                state = .idle
-                return
-            }
             transcriptionEngine.load(profile: selectedModel, modelURL: modelURL) {
                 [weak self] result in
                 guard let self else { return }
@@ -3342,7 +3537,11 @@ private final class AppDelegate:
             return
         }
         state = .idle
+        queueRecording(recorded, source: .dictation, createdAt: recordingStartedAt)
+    }
 
+    private func queueRecording(_ recorded: RecordedAudio, source: TranscriptSource, createdAt: Date) {
+        let profile = selectedModel
         let peakDB = 20 * log10(max(recorded.peakLevel, 0.000_001))
         DiagnosticLog.write(
             String(
@@ -3384,7 +3583,7 @@ private final class AppDelegate:
                 try self.convertToWhisperWAV(cafURL: cafURL, wavURL: wavURL)
                 let prompt = (try? String(contentsOf: self.promptURL, encoding: .utf8)) ?? ""
                 self.transcriptionEngine.transcribe(
-                    profile: self.selectedModel,
+                    profile: profile,
                     wavURL: wavURL,
                     vadModelURL: self.vadModelURL,
                     prompt: prompt
@@ -3394,6 +3593,8 @@ private final class AppDelegate:
                     self?.finishTranscription(
                         result,
                         jobID: jobID,
+                        source: source,
+                        createdAt: createdAt,
                         audioDuration: recorded.duration,
                         processingStartedAt: processingStartedAt
                     )
@@ -3405,6 +3606,8 @@ private final class AppDelegate:
                     self?.finishTranscription(
                         .failure(error),
                         jobID: jobID,
+                        source: source,
+                        createdAt: createdAt,
                         audioDuration: recorded.duration,
                         processingStartedAt: processingStartedAt
                     )
@@ -3441,6 +3644,8 @@ private final class AppDelegate:
     private func finishTranscription(
         _ result: Result<String, Error>,
         jobID: Int,
+        source: TranscriptSource,
+        createdAt: Date,
         audioDuration: TimeInterval,
         processingStartedAt: Date
     ) {
@@ -3455,17 +3660,25 @@ private final class AppDelegate:
                     processingSeconds: Date().timeIntervalSince(processingStartedAt),
                     text: text
                 )
-                let insertionText = text + " "
-                pasteAtCursor(insertionText)
-                DiagnosticLog.write(
-                    "Transcription job \(jobID) inserted " +
-                    "(\(insertionText.count) characters including trailing space)"
-                )
+                let entry = TranscriptEntry(createdAt: createdAt, duration: audioDuration, source: source, text: text)
+                do {
+                    try history.append(entry)
+                    transcriptModel.entries = history.entries
+                } catch {
+                    transcriptModel.entries.insert(entry, at: 0)
+                    transcriptModel.error = "Could not save history: \(error.localizedDescription). Copy this transcript before quitting."
+                }
+                transcriptModel.selectedID = entry.id
+                if source == .dictation {
+                    pasteAtCursor(text + " ")
+                }
+                DiagnosticLog.write("Transcription job \(jobID) completed (\(text.count) characters)")
             } else {
                 DiagnosticLog.write("Transcription job \(jobID) returned empty text")
             }
         case .failure(let error):
             errorMessage = error.localizedDescription
+            transcriptModel.error = "Transcription failed: \(error.localizedDescription)"
             DiagnosticLog.write(
                 "Transcription job \(jobID) error: \(error.localizedDescription)"
             )
@@ -3482,6 +3695,7 @@ private final class AppDelegate:
             refreshActivityUI()
         }
 
+        pumpRecordingChunks()
         if state == .idle && pendingTranscriptions == 0 {
             transcriptionEngine.unload(after: modelIdleTimeoutSeconds)
         }
@@ -3499,7 +3713,9 @@ private final class AppDelegate:
         idleMessage: String? = nil,
         recordingEndedWithoutSpeech: Bool = false
     ) {
-        if state == .recording {
+        if state == .computerRecording {
+            setStatus(transcriptModel.paused ? "Recording paused" : "Recording · transcript updates at pauses", symbol: "record.circle.fill")
+        } else if state == .recording {
             indicator.show(.recording)
             setStatus(recordingStatusText(), symbol: "record.circle.fill")
         } else if pendingTranscriptions > 0 {

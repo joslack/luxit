@@ -14,14 +14,15 @@ struct VoiceAnimationFrame {
 /// stationary energy while preserving changing voice/formant energy.
 final class VoiceAnimationFilter {
     static let calibrationFrameCount = 3
-    private static let visualNoiseFloor: Float = 0.0024
-    private static let visualSpeechCeiling: Float = 0.040
+    private static let visualNoiseFloor: Float = 0.0009
+    private static let visualSpeechCeiling: Float = 0.028
 
     private var noiseEstimate: [Float] = []
     private var hasNoiseBaseline = false
     private var tonalBackground: Float = 0
     private var calibrationFramesRemaining = 0
     private var calibrationFramesObserved = 0
+    private var ambientLevel: Float = 0.001
 
     func beginRecording() {
         noiseEstimate = []
@@ -29,9 +30,13 @@ final class VoiceAnimationFilter {
         tonalBackground = 0
         calibrationFramesRemaining = Self.calibrationFrameCount
         calibrationFramesObserved = 0
+        ambientLevel = 0.001
     }
 
-    func process(level: Float, spectrum: [Float]) -> VoiceAnimationFrame {
+    func process(level: Float, spectrum: [Float], voiceProbability: Float? = nil) -> VoiceAnimationFrame {
+        if let probability = voiceProbability, probability.isFinite {
+            return speechFrame(level: level, spectrum: spectrum, probability: probability)
+        }
         guard !spectrum.isEmpty else {
             return VoiceAnimationFrame(
                 level: 0,
@@ -160,15 +165,50 @@ final class VoiceAnimationFilter {
         )
     }
 
+    private func speechFrame(level: Float, spectrum: [Float], probability: Float) -> VoiceAnimationFrame {
+        let level = level.isFinite ? max(0, level) : 0
+        if noiseEstimate.count != spectrum.count {
+            noiseEstimate = Array(repeating: 0, count: spectrum.count)
+        }
+        // Learn the room only while the speech detector rejects it. In
+        // particular, never calibrate away the first word or a held vowel.
+        if probability < 0.18 {
+            ambientLevel += (level - ambientLevel) * (level < ambientLevel ? 0.18 : 0.08)
+            for i in spectrum.indices {
+                let value = spectrum[i].isFinite ? max(0, spectrum[i]) : 0
+                noiseEstimate[i] += (value - noiseEstimate[i]) * 0.08
+            }
+        }
+        let confidence = Self.clamp((probability - 0.22) / 0.48)
+        let gate = confidence * confidence * (3 - 2 * confidence)
+        // A confident soft voice can be below the recently learned room RMS.
+        // Keep a small speech-gated signal rather than erasing that voice.
+        let cleanLevel = max(level * 0.15, sqrt(max(0, level * level - ambientLevel * ambientLevel)))
+        let filtered = spectrum.enumerated().map { i, raw -> Float in
+            let value = raw.isFinite ? max(0, raw) : 0
+            return max(value * 0.15, value - noiseEstimate[i]) * Self.voiceWeight(at: i, bandCount: spectrum.count)
+        }
+        return VoiceAnimationFrame(level: cleanLevel * gate, spectrum: filtered,
+                                   voiceConfidence: gate)
+    }
+
+    static func visualResponse(for frame: VoiceAnimationFrame) -> Float {
+        guard frame.level.isFinite, frame.level > 0 else { return 0 }
+        let confidence = frame.voiceConfidence.isFinite ? clamp(frame.voiceConfidence) : 0
+        // Speech presence supplies energy even for whispers. Loudness can add
+        // emphasis, but it is no longer the price of lively particle motion.
+        return max(visualResponse(for: frame.level), confidence * 0.74)
+    }
+
     static func visualResponse(for conditionedLevel: Float) -> Float {
         let normalized = clamp(
             (conditionedLevel - visualNoiseFloor) /
                 (visualSpeechCeiling - visualNoiseFloor)
         )
         // The classifier has already removed stationary background here. Use
-        // a slightly expansive curve so quiet accepted speech still produces
-        // a clear response without reintroducing motion for zero-confidence
-        // room noise.
+        // a wider quiet-speech range so soft syllables do not disappear into
+        // a second noise gate. Rejected room noise still maps to exactly zero;
+        // ordinary speech has more movement without requiring a louder voice.
         return pow(normalized, 0.48)
     }
 

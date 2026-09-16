@@ -35,6 +35,9 @@ clang \
   -c "$project_dir/Sources/Luxit/WhisperBridge.c" \
   -o "$build_dir/WhisperBridge.o"
 
+clang -std=c11 -O3 -I"$whisper_prefix/include" -I"$ggml_prefix/include" \
+  -c "$project_dir/Sources/Luxit/VoiceActivityBridge.c" -o "$build_dir/VoiceActivityBridge.o"
+
 swiftc \
   -swift-version 5 \
   -O \
@@ -47,6 +50,8 @@ swiftc \
   -framework AudioToolbox \
   -framework AVFoundation \
   -framework CoreAudio \
+  -framework ScreenCaptureKit \
+  -framework SwiftUI \
   -framework IOKit \
   -framework Metal \
   -framework MetalKit \
@@ -65,13 +70,23 @@ swiftc \
   "$project_dir/Sources/Luxit/AudioInputDevice.swift" \
   "$project_dir/Sources/Luxit/LogSpectrumAnalyzer.swift" \
   "$project_dir/Sources/Luxit/VoiceAnimationFilter.swift" \
+  "$project_dir/Sources/Luxit/VoiceAnimationEnvelope.swift" \
+  "$project_dir/Sources/Luxit/VoiceActivityAnalyzer.swift" \
+  "$project_dir/Sources/Luxit/LatestAudioLevel.swift" \
   "$project_dir/Sources/Luxit/VoiceOrbGeometry.swift" \
   "$project_dir/Sources/Luxit/VoiceOrbLayout.swift" \
   "$project_dir/Sources/Luxit/ModelCatalog.swift" \
   "$project_dir/Sources/Luxit/VoiceOrbMotion.swift" \
+  "$project_dir/Sources/Luxit/VoiceOrbDissolution.swift" \
   "$project_dir/Sources/Luxit/MetalOrbRenderer.swift" \
+  "$project_dir/Sources/Luxit/TranscriptHistory.swift" \
+  "$project_dir/Sources/Luxit/TranscriptWindow.swift" \
+  "$project_dir/Sources/Luxit/TranscriptPanelLayout.swift" \
+  "$project_dir/Sources/Luxit/ComputerAudioRecorder.swift" \
+  "$project_dir/Sources/Luxit/RecordingSession.swift" \
   "$project_dir/Sources/Luxit/main.swift" \
   "$build_dir/WhisperBridge.o" \
+  "$build_dir/VoiceActivityBridge.o" \
   -o "$macos_dir/Luxit"
 
 cp "$project_dir/Resources/Info.plist" "$contents_dir/Info.plist"
