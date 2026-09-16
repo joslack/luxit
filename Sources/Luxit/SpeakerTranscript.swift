@@ -12,6 +12,7 @@ struct TranscriptionResult {
 }
 
 struct SpeakerTurn: Codable, Equatable {
+    static let maximumSpeakers = 10
     let source: RecordingAudioSource
     let speaker: Int
     let start: TimeInterval
@@ -41,7 +42,7 @@ enum SpeakerAlignment {
         let begin = offset + (words.map(\.start).min() ?? 0)
         let end = offset + (words.map { max($0.end, $0.start + 0.08) }.max() ?? 0)
         let nearby = turns.filter {
-            $0.source == source && $0.speaker >= 0 && $0.speaker < 4 &&
+            $0.source == source && $0.speaker >= 0 && $0.speaker < SpeakerTurn.maximumSpeakers &&
             $0.start.isFinite && $0.end.isFinite && $0.start < end && $0.end > begin
         }
         var spans: [SpeakerTextSpan] = []

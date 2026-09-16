@@ -261,6 +261,10 @@ struct TranscriptWindowView: View {
                         Button("Delete", systemImage: "trash", role: .destructive) { confirmingDelete = true }
                             .labelStyle(.iconOnly).disabled(entry.recordingState?.inProgress == true || entry.id == model.activeRecordingID)
                     }
+                    if let status = entry.speakerStatus {
+                        Label(status, systemImage: "person.2.wave.2")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                     TranscriptTextView(entry: entry, paused: model.paused).id(entry.id)
                 }.padding(.horizontal, 18).padding(.bottom, 12)
             } else {
@@ -349,14 +353,11 @@ struct TranscriptWindowView: View {
     }
 }
 
-/// Only this small header observes meter ticks; search, history, and transcript
-/// layout do not participate in audio-driven updates.
 private struct TranscriptTextView: View {
     let entry: TranscriptEntry
     let paused: Bool
     @State private var following: Bool
-    @State private var userScrolling = false
-    private let bottomID = "transcript-bottom"
+    @State private var followRevision = 0
 
     init(entry: TranscriptEntry, paused: Bool) {
         self.entry = entry
@@ -364,87 +365,37 @@ private struct TranscriptTextView: View {
         _following = State(initialValue: entry.recordingState?.inProgress == true)
     }
 
-    private func speakerText(_ spans: [SpeakerTextSpan]) -> Text {
-        let colors: [Color] = [.cyan, .purple, .mint, .orange]
-        return spans.enumerated().reduce(Text("")) { text, item in
-            let (index, span) = item
-            let label = span.speaker.map { "Speaker \($0 + 1)" } ?? "?"
-            let color = span.speaker.map { colors[max(0, $0) % colors.count] } ?? .secondary
-            let gap = index == 0 ? "" : " "
-            let marker = Text("[\(label)] ").font(.system(size: 11, weight: .medium)).foregroundColor(color)
-            return Text("\(text)\(gap)\(marker)\(span.text)")
-        }
-    }
-
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 16) {
-                    if let segments = entry.displaySegments {
-                        if entry.speakerState != nil {
-                            Text(entry.speakerState == .unavailable
-                                 ? "Speaker labels unavailable · transcript preserved"
-                                 : "Estimated speakers · up to 4 per source · ? means unclear")
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                        ForEach(segments) { segment in
-                            VStack(alignment: .leading, spacing: 5) {
-                                Text("\(TranscriptSegment.timestamp(segment.start)) · \(segment.sourceTitle)")
-                                    .font(.caption).foregroundStyle(.secondary)
-                                if let spans = segment.speakerSpans, spans.contains(where: { $0.speaker != nil }) {
-                                    // Inline markers preserve the paragraph's flow when
-                                    // just a word or two has an uncertain speaker.
-                                    speakerText(spans).font(.system(size: 15)).lineSpacing(5).textSelection(.enabled)
-                                } else {
-                                    Text(segment.text).font(.system(size: 15)).lineSpacing(5).textSelection(.enabled)
-                                }
-                            }.frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        if entry.recordingState?.inProgress == true {
-                            Text(paused ? "Recording paused." : (entry.recordingState == .recording
-                                 ? "Listening… New paragraphs appear at pauses." : "Finishing the remaining audio…"))
-                                .font(.callout).foregroundStyle(.secondary)
-                        } else if segments.isEmpty {
-                            Text(entry.recordingState == .failed ? "Audio is saved. Retry to finish the transcript." : "No speech detected.")
-                                .foregroundStyle(.secondary)
-                        }
-                    } else {
-                        Text(entry.text).font(.system(size: 15)).lineSpacing(5).textSelection(.enabled)
-                    }
-                    Color.clear.frame(height: 1).id(bottomID)
-                }.frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .onScrollGeometryChange(for: Bool.self) { geometry in
-                geometry.contentSize.height - geometry.visibleRect.maxY < 48
-            } action: { _, atBottom in
-                if userScrolling { following = atBottom }
-            }
-            .onScrollPhaseChange { _, phase, context in
-                let manual = phase == .tracking || phase == .interacting || phase == .decelerating
-                if userScrolling && phase == .idle {
-                    following = context.geometry.contentSize.height - context.geometry.visibleRect.maxY < 48
-                }
-                userScrolling = manual
-            }
-            .task(id: entry.displayText) {
-                guard following else { return }
-                // Allow the newly appended paragraph to lay out before moving.
-                await Task.yield()
-                guard !Task.isCancelled, following else { return }
-                withAnimation(.easeOut(duration: 0.18)) { proxy.scrollTo(bottomID, anchor: .bottom) }
-            }
+        NativeTranscriptText(entry: entry, paused: paused, followRevision: followRevision) { following = $0 }
             .overlay(alignment: .bottomTrailing) {
                 if !following && entry.recordingState?.inProgress == true {
                     Button("Latest", systemImage: "arrow.down") {
                         following = true
-                        withAnimation(.easeOut(duration: 0.18)) { proxy.scrollTo(bottomID, anchor: .bottom) }
+                        followRevision += 1
                     }.buttonStyle(.borderedProminent).controlSize(.small).padding(6)
                 }
             }
-        }
     }
 }
 
+private struct NativeTranscriptText: NSViewRepresentable {
+    let entry: TranscriptEntry
+    let paused: Bool
+    let followRevision: Int
+    let onFollowingChanged: (Bool) -> Void
+
+    func makeNSView(context: Context) -> TranscriptScrollView { TranscriptScrollView(frame: .zero) }
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: TranscriptScrollView, context: Context) -> CGSize? {
+        CGSize(width: proposal.width ?? 520, height: proposal.height ?? 160)
+    }
+    func updateNSView(_ view: TranscriptScrollView, context: Context) {
+        view.onFollowingChanged = onFollowingChanged
+        view.update(TranscriptContent.make(entry: entry, paused: paused),
+                    initiallyFollowing: entry.recordingState?.inProgress == true, followRevision: followRevision)
+    }
+}
+
+/// Only this small header observes meter ticks; transcript layout does not.
 private struct RecordingMeterView: View {
     @ObservedObject var meter: RecordingMeterModel
     let recording: Bool

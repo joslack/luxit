@@ -135,6 +135,15 @@ struct TranscriptEntry: Identifiable, Codable, Equatable {
     var segments: [TranscriptSegment]? = nil
     var recordingState: RecordingTranscriptState? = nil
     var speakerState: SpeakerAnalysisState? = nil
+    var speakerStatus: String? {
+        let labeled = segments?.contains { $0.speakerSpans?.contains { $0.speaker != nil } == true } == true
+        switch speakerState {
+        case .pending: return labeled ? "Estimated speakers · labels updating" : "Identifying speakers…"
+        case .complete: return labeled ? "Estimated speakers · ? means unclear" : "Speakers unclear · transcript preserved"
+        case .unavailable: return "Speaker labels unavailable · transcript preserved"
+        case nil: return nil
+        }
+    }
     var displaySegments: [TranscriptSegment]? { segments.map(TranscriptSegment.coalescingSources) }
     var displayText: String {
         guard let segments = displaySegments else { return text }

@@ -5,7 +5,7 @@ import Foundation
 /// One stateful CPU pipeline per source. Capture and transcription never wait
 /// for it; sealed audio stays in the journal until final analysis is durable.
 final class SpeakerAnalyzer {
-    static var modelURL: URL? { Bundle.main.url(forResource: "ls_eend_ami_500ms", withExtension: "mlmodelc") }
+    static var modelURL: URL? { Bundle.main.url(forResource: "ls_eend_dih3_500ms", withExtension: "mlmodelc") }
     private let queue = DispatchQueue(label: "com.joslack.luxit.speakers", qos: .utility)
     private let url: URL?
     private var model: LSEENDModel?
@@ -45,7 +45,7 @@ final class SpeakerAnalyzer {
         if model == nil {
             guard let url else { throw failure("The local speaker model is unavailable.") }
             let loaded = try LSEENDModel(modelURL: url, computeUnits: .cpuOnly)
-            guard loaded.metadata.sampleRate == 8_000, loaded.metadata.maxSpeakers == 4 else {
+            guard loaded.metadata.sampleRate == 8_000, loaded.metadata.maxSpeakers == SpeakerTurn.maximumSpeakers else {
                 throw failure("The speaker model is incompatible.")
             }
             model = loaded
@@ -101,7 +101,12 @@ final class SpeakerAnalyzer {
             for track in state.tracks.values { try track.diarizer.finalizeSession() }
         }
         return state.tracks.flatMap { source, track in
-            track.diarizer.timeline.speakers.values.flatMap(\.finalizedSegments).compactMap { segment -> SpeakerTurn? in
+            track.diarizer.timeline.speakers.values.flatMap { speaker in
+                // A person can keep speaking across multiple transcript chunks.
+                // Include the model's current turn without finalizing/resetting
+                // its session; the next update replaces this tentative interval.
+                speaker.finalizedSegments + (snapshot.stopped ? [] : speaker.tentativeSegments)
+            }.compactMap { segment -> SpeakerTurn? in
                 let begin = max(0, Double(segment.startTime))
                 let end = min(Double(track.cursor) / 16_000, Double(segment.endTime))
                 guard end > begin else { return nil }

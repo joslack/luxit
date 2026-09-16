@@ -4,8 +4,8 @@ The full license is included in FluidAudio-LICENSE.txt.
 Luxit builds its upstream source with a reduced package manifest, excluding
 unrelated CLI, tests, and NeMo text-normalization binary dependencies.
 
-LS-EEND AMI 500 ms Core ML model
+LS-EEND DIHARD III 500 ms Core ML model
 https://huggingface.co/FluidInference/ls-eend-coreml
 Pinned revision: 28ce1b1f8ef186729df63b3886fbaae7bc10c4a1
-Model card license: MIT. Supports up to four voices per audio source.
+Model card license: MIT. Supports up to ten voices per audio source.
 Labels are estimates local to one recording, not personal identification.

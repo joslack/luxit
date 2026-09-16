@@ -68,7 +68,7 @@ computer playback from also entering your microphone.
 
 Recordings made with Parakeet also estimate **Speaker 1**, **Speaker 2**, and so
 on within each audio source. Labels appear as analysis catches up; **?** marks
-uncertain words. Detection supports up to four voices per source and can make
+uncertain words. Detection supports up to ten voices per source and can make
 mistakes, especially with quiet or overlapping speech. These numbers reset for
 each recording and do not identify people by name. Whisper recordings retain
 source labels without individual speaker labels.

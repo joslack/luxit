@@ -91,6 +91,7 @@ swiftc \
   "$project_dir/Sources/Luxit/ParakeetWordTiming.swift" \
   "$project_dir/Sources/Luxit/SpeakerAnalyzer.swift" \
   "$project_dir/Sources/Luxit/TranscriptHistory.swift" \
+  "$project_dir/Sources/Luxit/TranscriptContent.swift" \
   "$project_dir/Sources/Luxit/TranscriptWindow.swift" \
   "$project_dir/Sources/Luxit/TranscriptPanelLayout.swift" \
   "$project_dir/Sources/Luxit/ComputerAudioRecorder.swift" \

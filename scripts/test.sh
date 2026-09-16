@@ -150,6 +150,14 @@ swiftc \
 
 "$build_dir/TranscriptHistoryTests"
 
+swiftc -swift-version 5 -sdk "$sdk_path" -target arm64-apple-macosx26.0 \
+  -module-cache-path "$module_cache" -framework AppKit \
+  "$project_dir/Sources/Luxit/SpeakerTranscript.swift" \
+  "$project_dir/Sources/Luxit/TranscriptHistory.swift" \
+  "$project_dir/Sources/Luxit/TranscriptContent.swift" \
+  "$project_dir/Tests/TranscriptContentTests.swift" -o "$build_dir/TranscriptContentTests"
+"$build_dir/TranscriptContentTests"
+
 swiftc \
   -swift-version 5 \
   -sdk "$sdk_path" \

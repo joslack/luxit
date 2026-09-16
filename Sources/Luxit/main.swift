@@ -2960,14 +2960,19 @@ private final class AppDelegate:
             do {
                 switch result {
                 case .success(let turns):
-                    try session.updateSpeakers(turns: turns, state: snapshot.stopped ? .complete : .pending)
+                    let state: SpeakerAnalysisState = snapshot.stopped ? .complete : .pending
+                    if session.snapshot.speakerTurns != turns || session.snapshot.speakerState != state {
+                        try session.updateSpeakers(turns: turns, state: state)
+                        try self.saveRecordingSession(session)
+                    }
+                    DiagnosticLog.write("Speaker analysis updated chunks=\(snapshot.chunks.filter(\.sealed).count) turns=\(turns.count) final=\(snapshot.stopped)")
                 case .failure(let error):
                     // Speaker failure never fails transcription or removes text.
                     try session.updateSpeakers(turns: [], state: .unavailable)
                     self.speakerAnalyzer.release(sessionID: snapshot.id)
                     DiagnosticLog.write("Speaker analysis unavailable: \(error.localizedDescription)")
+                    try self.saveRecordingSession(session)
                 }
-                try self.saveRecordingSession(session)
             } catch {
                 // Keep Retry reachable even if final labels could not be saved.
                 self.failedRecordingSessions.insert(snapshot.id)
@@ -3469,7 +3474,7 @@ private final class AppDelegate:
         settings.selectedModelName = displayedModel.displayName
         settings.canSelectModel = pendingModelActivation == nil && state == .idle && pendingTranscriptions == 0
         settings.speakerDetection = SpeakerAnalyzer.modelURL == nil ? "Local model unavailable" :
-            (selectedModel.usesParakeetEngine ? "Automatic for recordings · up to 4 voices per source" : "Choose Parakeet to label speakers in recordings")
+            (selectedModel.usesParakeetEngine ? "Automatic for recordings · up to \(SpeakerTurn.maximumSpeakers) voices per source" : "Choose Parakeet to label speakers in recordings")
         settings.usage = String(format: "%.2f hours · %@ words · %@ dictations",
                                 snapshot.audioSeconds / 3600, snapshot.words.formatted(), snapshot.dictations.formatted())
         settings.performance = snapshot.dictations == 0 ? "No completed dictations" :

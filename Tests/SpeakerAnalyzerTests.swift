@@ -35,7 +35,8 @@ private func expect(_ condition: @autoclosure () -> Bool, _ message: String) {
         try samples.withUnsafeBufferPointer { audio in
             _ = try session.append(source: .computer, samples: audio.baseAddress!, count: prefix, start: 0, speech: true)
         }
-        _ = try analyze(analyzer, session)
+        let live = try analyze(analyzer, session)
+        expect(!live.isEmpty, "Speaker labels are available before a recording is stopped")
         try samples.withUnsafeBufferPointer { audio in
             if audio.count > prefix {
                 _ = try session.append(source: .computer, samples: audio.baseAddress! + prefix,
@@ -54,6 +55,15 @@ private func expect(_ condition: @autoclosure () -> Bool, _ message: String) {
         let mic = turns.filter { $0.source == .microphone }.map { [$0.start, $0.end, Double($0.speaker)] }
         let computer = turns.filter { $0.source == .computer }.map { [$0.start, $0.end, Double($0.speaker)] }
         expect(mic == computer, "Half-second processing and differing submission boundaries produce the same labels")
+        let silent = try RecordingSession(root: root, detectSpeakers: true)
+        let zeros = [Float](repeating: 0, count: 30 * 16000)
+        try zeros.withUnsafeBufferPointer {
+            _ = try silent.append(source: .computer, samples: $0.baseAddress!, count: $0.count, start: 0, speech: false)
+        }
+        try silent.finish(duration: 30)
+        let silentTurns = try analyze(SpeakerAnalyzer(modelURL: model), silent)
+        expect(silentTurns.isEmpty,
+               "The actual model must not assign speakers to digital silence")
         do {
             _ = try analyze(SpeakerAnalyzer(modelURL: nil), recovered)
             fatalError("Missing model unexpectedly succeeded")

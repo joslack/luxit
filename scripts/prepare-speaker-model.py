@@ -8,7 +8,7 @@ import urllib.request
 
 root = Path(__file__).resolve().parents[1]
 manifest = json.loads((root / 'scripts/dependencies/speaker-model.json').read_text())
-target = root / '.build/speaker-model/ls_eend_ami_500ms.mlmodelc'
+target = root / '.build/speaker-model' / Path(manifest['path']).name
 for relative, expected in manifest['files'].items():
     dest = target / relative
     if dest.exists() and hashlib.sha256(dest.read_bytes()).hexdigest() == expected:

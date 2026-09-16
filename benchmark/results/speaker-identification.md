@@ -1,12 +1,23 @@
 # Local speaker-identification experiment
 
 Speaker labeling is experimental. The development branch now integrates the
-AMI model with word timing, independent CPU analysis, and journal recovery;
+DIHARD III model with word timing, independent CPU analysis, and journal recovery;
 the published v0.12.0 release predates that integration. The measurements
 below evaluate a candidate for labeling people within a recording; they do not
 demonstrate acoustic separation or cancellation of computer playback entering a
 microphone. The public artifact contains aggregate measurements only, with no
 audio, transcript text, private recording identifiers, or local paths.
+
+## Validation status
+
+The initial measurements below predate installed-app validation. A restricted
+Core ML test run subsequently assigned speakers to digital silence while the
+same input remained unlabeled under normal macOS execution. Treat those older
+accuracy measurements as provisional until rerun outside that restricted
+environment. The regression suite now checks digital silence, live updates,
+and recording recovery using the actual bundled model. The DIHARD III variant
+replaces AMI after the latter missed most speech in an authorized local meeting
+check; those local labels are not independently verified speaker identities.
 
 ## Natural meeting check
 
