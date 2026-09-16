@@ -18,9 +18,28 @@ private func expect(_ condition: @autoclosure () -> Bool, _ message: String) {
         let content = TranscriptContent.make(entry: entry, paused: false)
         expect(content.string.components(separatedBy: "First sentence.").count == 401,
             "Long labeled transcripts preserve every paragraph")
-        expect(content.string.contains("[Speaker 1]") && content.string.contains("[?] Second sentence."),
-            "Known and unclear speakers retain readable labels and words")
-        expect(entry.speakerStatus == "Estimated speakers · labels updating", "Live status reflects available labels")
+        expect(content.string.contains("[Speaker 1]") && !content.string.contains("[?]"),
+            "Uncertainty does not appear as a speaker-switch marker")
+        let uncertainRange = (content.string as NSString).range(of: "Second sentence.")
+        let attributes = content.attributes(at: uncertainRange.location, effectiveRange: nil)
+        expect(attributes[.underlineStyle] as? Int == NSUnderlineStyle.single.rawValue | NSUnderlineStyle.patternDot.rawValue,
+            "Unassigned words retain a dotted underline instead of an invented speaker")
+        expect((attributes[.toolTip] as? String)?.contains("does not indicate a speaker change") == true,
+            "Uncertainty has an explanation on the affected words")
+        expect(entry.speakerStatus == "Speakers updating · dotted text is unassigned", "Live status explains the uncertainty styling")
+
+        let pausedSpeech = TranscriptEntry(createdAt: Date(), duration: 3, source: .recording,
+            text: "", segments: [TranscriptSegment(id: UUID(), start: 0, source: .microphone,
+                text: "Before a pause after. New voice.", speakerSpans: [
+                    SpeakerTextSpan(text: "Before", speaker: 0),
+                    SpeakerTextSpan(text: "a pause", speaker: nil),
+                    SpeakerTextSpan(text: "after.", speaker: 0),
+                    SpeakerTextSpan(text: "New voice.", speaker: 1)])], speakerState: .complete)
+        let pausedText = TranscriptContent.make(entry: pausedSpeech, paused: false).string
+        expect(pausedText.contains("[Speaker 1] Before a pause after. [Speaker 2] New voice."),
+            "A gap never repeats the same speaker, but a confirmed change remains visible")
+        expect(pausedSpeech.segments?.first?.speakerSpans?[1].speaker == nil,
+            "Presentation does not retroactively assign uncertain words")
         let scroll = TranscriptScrollView(frame: NSRect(x: 0, y: 0, width: 520, height: 160))
         scroll.layoutSubtreeIfNeeded()
         scroll.update(content, initiallyFollowing: true, followRevision: 0)

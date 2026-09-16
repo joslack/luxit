@@ -2637,9 +2637,6 @@ private final class AppDelegate:
     private let transcriptModel = TranscriptWindowModel()
     private var transcriptWindow: TranscriptWindowController?
     private let computerRecorder = ComputerAudioRecorder()
-    private let computerVoiceAnalyzer = VoiceActivityAnalyzer()
-    private let microphoneVoiceAnalyzer = VoiceActivityAnalyzer()
-    private let combinedVoiceLevels = CombinedVoiceLevels()
     private var computerTransition = false
     private var recordingSessions: [UUID: RecordingSession] = [:]
     private var activeRecordingSession: RecordingSession?
@@ -2658,6 +2655,7 @@ private final class AppDelegate:
     private var nextJobID = 1
     private let maximumPendingTranscriptions = 3
     private var statusItem: NSStatusItem!
+    private var recordingPresence: RecordingPresenceController?
     private var permissionsTimer: Timer?
     private var statusText = "Ready — model loads when recording starts"
     private var keyboardReady = false
@@ -2814,6 +2812,13 @@ private final class AppDelegate:
             button.action = #selector(toggleTranscriptPanel)
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         }
+        recordingPresence = RecordingPresenceController(item: statusItem)
+        recordingPresence?.onOpen = { [weak self] in self?.openTranscriptHistory() }
+        recordingPresence?.transcriptIsVisible = { [weak self] in
+            guard let window = self?.transcriptWindow?.window else { return false }
+            return window.isVisible && window.isOnActiveSpace && window.occlusionState.contains(.visible)
+        }
+        recordingPresence?.update(.idle, defaultSymbol: "mic.circle.fill", detail: "Ready — Caps Lock to dictate")
 
         refreshSettings()
     }
@@ -2879,11 +2884,6 @@ private final class AppDelegate:
         computerRecorder.onLevel = { [weak self] level in
             self?.computerLevelMailbox.store(level: level)
 
-        }
-        computerRecorder.onAudio = { [weak self] type, samples, count, rate in
-            guard let self else { return }
-            let analyzer = type == .microphone ? self.microphoneVoiceAnalyzer : self.computerVoiceAnalyzer
-            analyzer.submit(samples: samples, count: count, sampleRate: rate)
         }
         computerRecorder.onFailure = { [weak self] error in
             guard let self, self.state == .computerRecording else { return }
@@ -3050,8 +3050,8 @@ private final class AppDelegate:
         transcriptModel.activeRecordingID = session.snapshot.id
         transcriptModel.selectedID = session.snapshot.id
         transcriptModel.selectedTab = 1
-        // These processors consume every source buffer for segmentation. The
-        // independent animation analyzers may discard stale visualization work.
+        // These processors consume every source buffer for segmentation.
+        // Conversation recording has no cloud or separate animation analysis.
         let detectors = [VoiceActivityProcessor(modelURL: VoiceActivityAnalyzer.modelURL),
                          VoiceActivityProcessor(modelURL: VoiceActivityAnalyzer.modelURL)]
         computerRecorder.classifySpeech = { type, samples, count in
@@ -3064,17 +3064,9 @@ private final class AppDelegate:
         transcriptModel.error = nil
         transcriptModel.meter.elapsed = 0
         transcriptModel.paused = false
+        indicator.hide()
         setStatus("Starting computer + microphone recording…", symbol: "record.circle")
         recordingStartedAt = Date()
-        combinedVoiceLevels.reset()
-        for (source, analyzer) in [computerVoiceAnalyzer, microphoneVoiceAnalyzer].enumerated() {
-            analyzer.start { [weak self] level, spectrum, probability in
-                guard let self else { return }
-                let frame = self.combinedVoiceLevels.update(source: source, level: level, spectrum: spectrum,
-                                                           probability: probability)
-                self.indicator.setAudioLevel(frame.level, spectrum: frame.spectrum, voiceProbability: frame.voiceProbability)
-            }
-        }
         computerRecorder.start(session: session) { [weak self] result in
             guard let self else { return }
             self.computerTransition = false
@@ -3082,7 +3074,6 @@ private final class AppDelegate:
             case .success:
                 self.transcriptModel.recording = true
                 DiagnosticLog.write("Computer recording started input=\(self.computerRecorder.microphoneName ?? "unknown")")
-                self.indicator.show(.recording)
                 self.refreshActivityUI()
                 let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
                     guard let self else { return }
@@ -3103,8 +3094,6 @@ private final class AppDelegate:
                     }
                 }
             case .failure(let error):
-                self.computerVoiceAnalyzer.stop()
-                self.microphoneVoiceAnalyzer.stop()
                 self.state = .idle
                 try? session.finish(duration: 0)
                 self.activeRecordingSession = nil
@@ -3123,10 +3112,6 @@ private final class AppDelegate:
         transcriptModel.meter.level = 0
         _ = computerLevelMailbox.take()
         computerRecorder.setPaused(transcriptModel.paused)
-        computerVoiceAnalyzer.reset()
-        microphoneVoiceAnalyzer.reset()
-        combinedVoiceLevels.reset()
-        if transcriptModel.paused { indicator.hide() } else { indicator.show(.recording) }
         refreshActivityUI()
     }
 
@@ -3137,10 +3122,9 @@ private final class AppDelegate:
         recordingClock = nil
         transcriptModel.busy = true
         transcriptModel.message = "Preparing recording…"
-        indicator.show(.processing)
+        indicator.hide()
+        setStatus("Finishing recording…", symbol: "ellipsis.circle.fill")
         let session = activeRecordingSession
-        computerVoiceAnalyzer.stop()
-        microphoneVoiceAnalyzer.stop()
         computerRecorder.stop { [weak self] result in
             guard let self else { return }
             self.computerTransition = false
@@ -3457,13 +3441,20 @@ private final class AppDelegate:
         transcriptModel.message = text
         transcriptModel.busy = state == .recording || computerTransition ||
             (pendingTranscriptions >= maximumPendingTranscriptions && !transcriptModel.recording)
-        statusItem.button?.image = NSImage(
-            systemSymbolName: symbol,
-            accessibilityDescription: text
-        )
-        statusItem.button?.image?.isTemplate = true
-        statusItem.button?.toolTip = "Luxit — \(text)"
+        recordingPresence?.update(conversationPresence, defaultSymbol: symbol, detail: text)
         refreshSettings()
+    }
+
+    private var conversationPresence: RecordingPresence {
+        if state == .recording { return .recording }
+        if state == .computerRecording {
+            if computerTransition { return transcriptModel.recording ? .finishing : .starting }
+            return transcriptModel.paused ? .paused : .recording
+        }
+        if sessionChunkInFlight || speakerAnalysisInFlight || recordingSessions.values.contains(where: {
+            !failedRecordingSessions.contains($0.snapshot.id) && !$0.snapshot.complete
+        }) { return .processing }
+        return .idle
     }
 
     private func refreshSettings() {
@@ -3775,18 +3766,24 @@ private final class AppDelegate:
         recordingEndedWithoutSpeech: Bool = false
     ) {
         if state == .computerRecording {
+            indicator.hide()
             let microphone = computerRecorder.microphoneName ?? "Microphone"
-            setStatus(transcriptModel.paused ? "Recording paused" : "Recording · \(microphone)", symbol: "record.circle.fill")
+            let text = computerTransition ? (transcriptModel.recording ? "Finishing recording…" : "Starting recording…")
+                : (transcriptModel.paused ? "Recording paused" : "Recording · \(microphone)")
+            setStatus(text, symbol: "record.circle.fill")
         } else if state == .recording {
             indicator.show(.recording)
             setStatus(recordingStatusText(), symbol: "record.circle.fill")
-        } else if pendingTranscriptions > 0 {
+        } else if pendingTranscriptions > (sessionChunkInFlight ? 1 : 0) {
             indicator.show(.processing)
             let noun = pendingTranscriptions == 1 ? "transcription" : "transcriptions"
             setStatus(
                 "\(pendingTranscriptions) \(noun) processing — Caps Lock starts the next recording",
                 symbol: "ellipsis.circle.fill"
             )
+        } else if conversationPresence == .processing {
+            indicator.hide()
+            setStatus("Finishing recording transcript and speaker labels…", symbol: "ellipsis.circle.fill")
         } else {
             if recordingEndedWithoutSpeech {
                 indicator.completeRecording()

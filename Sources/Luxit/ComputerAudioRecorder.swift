@@ -23,7 +23,6 @@ final class ComputerAudioRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
     private var acceptingAudio = false
     private(set) var microphoneName: String?
     var onLevel: ((Float) -> Void)?
-    var onAudio: ((SCStreamOutputType, UnsafePointer<Float>, Int, Double) -> Void)?
     var onFailure: ((Error) -> Void)?
     var onChunksReady: (() -> Void)?
     var classifySpeech: ((SCStreamOutputType, UnsafePointer<Float>, Int) -> Bool)?
@@ -72,7 +71,6 @@ final class ComputerAudioRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
                     for (type, track) in tracks {
                         track.onAudio = { [weak self, session] samples, count, start in
                             guard let self else { return }
-                            self.onAudio?(type, samples, count, 16_000)
                             let speech = self.classifySpeech?(type, samples, count) ?? true
                             if try session.append(source: type == .microphone ? .microphone : .computer,
                                                   samples: samples, count: count, start: start, speech: speech) {

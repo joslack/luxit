@@ -137,9 +137,11 @@ struct TranscriptEntry: Identifiable, Codable, Equatable {
     var speakerState: SpeakerAnalysisState? = nil
     var speakerStatus: String? {
         let labeled = segments?.contains { $0.speakerSpans?.contains { $0.speaker != nil } == true } == true
+        let uncertain = segments?.contains { $0.speakerSpans?.contains { $0.speaker == nil } == true } == true
+        let legend = uncertain ? " · dotted text is unassigned" : ""
         switch speakerState {
-        case .pending: return labeled ? "Estimated speakers · labels updating" : "Identifying speakers…"
-        case .complete: return labeled ? "Estimated speakers · ? means unclear" : "Speakers unclear · transcript preserved"
+        case .pending: return labeled ? "Speakers updating\(legend)" : "Identifying speakers…"
+        case .complete: return labeled ? "Estimated speakers\(legend)" : "Speakers unclear · transcript preserved"
         case .unavailable: return "Speaker labels unavailable · transcript preserved"
         case nil: return nil
         }

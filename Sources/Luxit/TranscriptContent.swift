@@ -23,14 +23,28 @@ enum TranscriptContent {
         let colors: [NSColor] = [.systemCyan, .systemPurple, .systemMint, .systemOrange]
         for segment in segments {
             append("\(TranscriptSegment.timestamp(segment.start)) · \(segment.sourceTitle)\n", caption)
-            if let spans = segment.speakerSpans, spans.contains(where: { $0.speaker != nil }) {
+            if let spans = segment.speakerSpans, !spans.isEmpty {
+                var previousSpeaker: Int?
                 for (index, span) in spans.enumerated() {
                     if index > 0 { append(" ", body) }
-                    var marker = caption
-                    marker[.foregroundColor] = span.speaker.map { colors[max(0, $0) % colors.count] }
-                        ?? NSColor.secondaryLabelColor
-                    append("[\(span.speaker.map { "Speaker \($0 + 1)" } ?? "?")] ", marker)
-                    append(span.text, body)
+                    if let speaker = span.speaker {
+                        if speaker != previousSpeaker {
+                            var marker = caption
+                            marker[.foregroundColor] = colors[max(0, speaker) % colors.count]
+                            append("[Speaker \(speaker + 1)] ", marker)
+                        }
+                        previousSpeaker = speaker
+                        append(span.text, body)
+                    } else {
+                        // A gap in attribution is not evidence of a new person.
+                        // Preserve the uncertainty without inserting a turn marker
+                        // or assigning these words to either neighboring speaker.
+                        var uncertain = body
+                        uncertain[.underlineStyle] = NSUnderlineStyle.single.rawValue | NSUnderlineStyle.patternDot.rawValue
+                        uncertain[.underlineColor] = NSColor.tertiaryLabelColor
+                        uncertain[.toolTip] = "Speaker unassigned. A pause or overlapping voices can make attribution uncertain; this does not indicate a speaker change."
+                        append(span.text, uncertain)
+                    }
                 }
             } else { append(segment.text, body) }
             append("\n\n", body)

@@ -264,6 +264,7 @@ struct TranscriptWindowView: View {
                     if let status = entry.speakerStatus {
                         Label(status, systemImage: "person.2.wave.2")
                             .font(.caption).foregroundStyle(.secondary)
+                            .help("Speaker labels are estimates within this recording and audio source. Dotted text has no assigned speaker; a pause does not mean a new person is speaking.")
                     }
                     TranscriptTextView(entry: entry, paused: model.paused).id(entry.id)
                 }.padding(.horizontal, 18).padding(.bottom, 12)
