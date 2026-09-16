@@ -59,11 +59,30 @@ enum TranscriptContent {
     }
 }
 
+final class TranscriptTextContentView: NSTextView {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        // This accessory app has no Edit menu to route the standard shortcuts.
+        // Handle them only for the focused transcript, so search fields and
+        // other apps keep ownership of their own selection and clipboard.
+        let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
+        if window?.firstResponder === self, event.type == .keyDown, modifiers == .command {
+            switch event.charactersIgnoringModifiers?.lowercased() {
+            case "c": copy(nil); return true
+            case "a": selectAll(nil); return true
+            default: break
+            }
+        }
+        return super.performKeyEquivalent(with: event)
+    }
+}
+
 /// TextKit owns the document's height and scroll position. SwiftUI's lazy stack
 /// and animated scroll-to-bottom can repeatedly invalidate each other's layout
 /// when speaker labels change the heights of earlier paragraphs.
 final class TranscriptScrollView: NSScrollView {
-    let transcript = NSTextView(frame: .zero)
+    let transcript = TranscriptTextContentView(frame: .zero)
     var onFollowingChanged: ((Bool) -> Void)?
     private(set) var following = false
     private var initialized = false

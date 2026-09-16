@@ -57,6 +57,8 @@ Click Luxit's menu-bar icon to open the panel at the top center of your screen.
 **History** keeps your dictations and recordings locally: search, open, copy,
 or delete a transcript. History begins with this version; older dictations
 cannot be recovered.
+Select text in an open transcript and press **⌘C** to copy it. **⌘A** selects
+the entire transcript; the **Copy** button also copies the whole transcript.
 
 Choose **Record** to capture your microphone and computer audio together, such
 as a call or video. The transcript grows in timestamped paragraphs at natural
