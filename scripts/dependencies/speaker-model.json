@@ -1,0 +1,11 @@
+{
+  "revision": "28ce1b1f8ef186729df63b3886fbaae7bc10c4a1",
+  "path": "optimized/ami/500ms/ls_eend_ami_500ms.mlmodelc",
+  "files": {
+    "analytics/coremldata.bin": "8c8d6032e92c8c43fe974f203d4a9041453e83932bbc133eaa00605afe3464b4",
+    "coremldata.bin": "984dbda533de03f37b496d41400be4fb0cad97233106f868482ef79302526a38",
+    "metadata.json": "11887907e88625e0281a328f159125399ddc794ac1e5af03e6ab03f8e4244a6e",
+    "model.mil": "ba9a781d47ce033c41ad334e76d985fc067d7b6c338182f6e6d16e9b4289626b",
+    "weights/weight.bin": "97952c32e939e275869cf202b0079b5563cf071ca90b2df10a123d1f56e702c5"
+  }
+}

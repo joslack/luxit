@@ -1,6 +1,8 @@
 # Local speaker-identification experiment
 
-Speaker labeling is experimental and is not enabled in Luxit. The measurements
+Speaker labeling is experimental. The development branch now integrates the
+AMI model with word timing, independent CPU analysis, and journal recovery;
+the published v0.12.0 release predates that integration. The measurements
 below evaluate a candidate for labeling people within a recording; they do not
 demonstrate acoustic separation or cancellation of computer playback entering a
 microphone. The public artifact contains aggregate measurements only, with no

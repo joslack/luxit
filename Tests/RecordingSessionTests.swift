@@ -96,6 +96,29 @@ private func expect(_ condition: @autoclosure () -> Bool, _ message: String) {
                "Overlapping words reconcile despite punctuation differences")
         expect(TranscriptStitcher.removingOverlap(previous: "Yes", next: "Yes, definitely.") == "Yes, definitely.",
                "A short repeated answer is not mistaken for duplicate context")
+        let labeled = try RecordingSession(root: root, detectSpeakers: true)
+        try append(labeled, seconds: 2, start: 0, speech: true)
+        try labeled.finish(duration: 2)
+        let labeledChunk = labeled.snapshot.pending[0]
+        try labeled.complete(chunkID: labeledChunk.id, text: "First person.", words: [
+            TranscriptionWord(text: "First", start: 0, end: 0.5),
+            TranscriptionWord(text: "person.", start: 0.5, end: 1)])
+        labeled.removeCompletedAudio(chunk: labeledChunk)
+        expect(!labeled.snapshot.complete && FileManager.default.fileExists(atPath: labeled.directory.appendingPathComponent(labeledChunk.filename).path),
+               "Text is available while speaker processing retains audio for recovery")
+        let labelRecovery = try RecordingSession(recovering: labeled.directory)
+        expect(labelRecovery.snapshot.chunks[0].words?.count == 2 && labelRecovery.snapshot.speakerState == .pending,
+               "Timing and pending speaker analysis survive restart")
+        try labelRecovery.updateSpeakers(turns: [SpeakerTurn(source: .microphone, speaker: 1, start: 0, end: 2)], state: .complete)
+        let labeledEntry = labelRecovery.snapshot.entry(state: .complete)
+        expect(labelRecovery.snapshot.complete && labeledEntry.segments?.first?.speakerSpans?.first?.speaker == 1,
+               "Final labels make the recording complete and align to its original words")
+        expect(labeledEntry.displayText.contains("Speaker 2") && labeledEntry.displayText.contains("First person."),
+               "Copied transcripts include speaker labels and all original words")
+        try labelRecovery.updateSpeakers(turns: [], state: .unavailable)
+        expect(labelRecovery.snapshot.complete && labelRecovery.snapshot.entry(state: .complete).segments?.first?.text == "First person.",
+               "Speaker failure does not block or erase transcription")
+
         let attributes = try FileManager.default.attributesOfItem(atPath: interruptedDirectory.appendingPathComponent("session.json").path)
         expect((attributes[.posixPermissions] as? NSNumber)?.intValue == 0o600, "Recording metadata stays private")
         print("RecordingSessionTests passed (including 45-minute capture and interruption recovery)")

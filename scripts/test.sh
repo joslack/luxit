@@ -24,6 +24,9 @@ for script in \
   "$project_dir/scripts/check-whisper-runtime.sh" \
   "$project_dir/scripts/install.sh" \
   "$project_dir/scripts/build.sh" \
+  "$project_dir/scripts/build-speaker-runtime.sh" \
+  "$project_dir/scripts/test-speaker-runtime.sh" \
+  "$project_dir/scripts/test-transcription-timing.sh" \
   "$project_dir/scripts/test-versioning.sh"; do
   zsh -n "$script"
 done
@@ -139,6 +142,7 @@ swiftc \
   -sdk "$sdk_path" \
   -target arm64-apple-macosx26.0 \
   -module-cache-path "$module_cache" \
+  "$project_dir/Sources/Luxit/SpeakerTranscript.swift" \
   "$project_dir/Sources/Luxit/TranscriptHistory.swift" \
   "$project_dir/Sources/Luxit/TranscriptPanelLayout.swift" \
   "$project_dir/Tests/TranscriptHistoryTests.swift" \
@@ -154,6 +158,7 @@ swiftc \
   -framework AVFoundation \
   -framework ScreenCaptureKit \
   "$project_dir/Sources/Luxit/AudioInputDevice.swift" \
+  "$project_dir/Sources/Luxit/SpeakerTranscript.swift" \
   "$project_dir/Sources/Luxit/TranscriptHistory.swift" \
   "$project_dir/Sources/Luxit/ComputerAudioRecorder.swift" \
   "$project_dir/Sources/Luxit/RecordingSession.swift" \
@@ -164,6 +169,7 @@ swiftc \
 
 swiftc -swift-version 5 -sdk "$sdk_path" -target arm64-apple-macosx26.0 \
   -module-cache-path "$module_cache" -framework AVFoundation \
+  "$project_dir/Sources/Luxit/SpeakerTranscript.swift" \
   "$project_dir/Sources/Luxit/TranscriptHistory.swift" \
   "$project_dir/Sources/Luxit/RecordingSession.swift" \
   "$project_dir/Tests/RecordingSessionTests.swift" \
@@ -187,3 +193,14 @@ swiftc -swift-version 5 -O -sdk "$sdk_path" -target arm64-apple-macosx26.0 \
   "$project_dir/Tests/VoiceActivityAnalyzerTests.swift" \
   "$build_dir/VoiceActivityBridge.o" -o "$build_dir/VoiceActivityAnalyzerTests"
 "$build_dir/VoiceActivityAnalyzerTests" "$whisper_prefix/share/whisper-cpp/jfk.wav"
+
+
+swiftc -swift-version 5 -sdk "$sdk_path" -target arm64-apple-macosx26.0 \
+  -module-cache-path "$module_cache" \
+  "$project_dir/Sources/Luxit/SpeakerTranscript.swift" \
+  "$project_dir/Sources/Luxit/TranscriptHistory.swift" \
+  "$project_dir/Tests/SpeakerTranscriptTests.swift" -o "$build_dir/SpeakerTranscriptTests"
+"$build_dir/SpeakerTranscriptTests"
+
+"$project_dir/scripts/test-speaker-runtime.sh"
+"$project_dir/scripts/test-transcription-timing.sh"

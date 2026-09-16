@@ -647,6 +647,33 @@ char * ew_parakeet_transcribe(
     return transcript;
 }
 
+ew_timed_token * ew_parakeet_timed_tokens(void * raw_context, int * count) {
+    *count = 0;
+    if (!raw_context) return NULL;
+    struct parakeet_context * context = raw_context;
+    const int segments = parakeet_full_n_segments(context);
+    int total = 0;
+    for (int s = 0; s < segments; ++s) total += parakeet_full_n_tokens(context, s);
+    if (total <= 0) return NULL;
+    ew_timed_token * tokens = calloc((size_t) total, sizeof(*tokens));
+    if (!tokens) return NULL;
+    for (int s = 0; s < segments; ++s) {
+        for (int t = 0; t < parakeet_full_n_tokens(context, s); ++t) {
+            const struct parakeet_token_data token = parakeet_full_get_token_data(context, s, t);
+            // Backend timestamps are mel frames (160 samples at 16 kHz).
+            tokens[*count] = (ew_timed_token) {
+                .text = parakeet_full_get_token_text(context, s, t),
+                .start = token.t0 / 100.0, .end = token.t1 / 100.0,
+                .begins_word = token.is_word_start
+            };
+            ++*count;
+        }
+    }
+    return tokens;
+}
+
+void ew_timed_tokens_free(ew_timed_token * tokens) { free(tokens); }
+
 void ew_whisper_string_free(char * value) {
     free(value);
 }

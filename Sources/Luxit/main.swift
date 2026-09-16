@@ -1804,7 +1804,7 @@ private protocol TranscriptionBackend {
         wavURL: URL,
         vadModelURL: URL,
         prompt: String,
-        completion: @escaping (Result<String, Error>) -> Void
+        completion: @escaping (Result<TranscriptionResult, Error>) -> Void
     )
 }
 
@@ -1915,7 +1915,7 @@ private final class WhisperCppEngine: TranscriptionBackend {
         wavURL: URL,
         vadModelURL: URL,
         prompt: String,
-        completion: @escaping (Result<String, Error>) -> Void
+        completion: @escaping (Result<TranscriptionResult, Error>) -> Void
     ) {
         queue.async {
             self.unloadWorkItem?.cancel()
@@ -1957,7 +1957,7 @@ private final class WhisperCppEngine: TranscriptionBackend {
 
             let transcript = String(cString: pointer)
             ew_whisper_string_free(pointer)
-            DispatchQueue.main.async { completion(.success(transcript)) }
+            DispatchQueue.main.async { completion(.success(TranscriptionResult(text: transcript))) }
         }
     }
 }
@@ -2062,7 +2062,7 @@ private final class ParakeetEngine: TranscriptionBackend {
         wavURL: URL,
         vadModelURL: URL,
         prompt: String,
-        completion: @escaping (Result<String, Error>) -> Void
+        completion: @escaping (Result<TranscriptionResult, Error>) -> Void
     ) {
         _ = prompt
         queue.async {
@@ -2103,7 +2103,9 @@ private final class ParakeetEngine: TranscriptionBackend {
 
             let transcript = String(cString: pointer)
             ew_whisper_string_free(pointer)
-            DispatchQueue.main.async { completion(.success(transcript)) }
+            let result = TranscriptionResult(text: transcript,
+                words: ParakeetWordTiming.read(context: context, text: transcript))
+            DispatchQueue.main.async { completion(.success(result)) }
         }
     }
 }
@@ -2241,7 +2243,7 @@ private final class TranscriptionEngine {
         wavURL: URL,
         vadModelURL: URL,
         prompt: String,
-        completion: @escaping (Result<String, Error>) -> Void
+        completion: @escaping (Result<TranscriptionResult, Error>) -> Void
     ) {
         queue.async {
             self.pressureEligibleAt = nil
@@ -2624,6 +2626,9 @@ private final class AppDelegate:
 {
     private let recorder = AudioRecorder()
     private let transcriptionEngine = TranscriptionEngine()
+    private let speakerAnalyzer = SpeakerAnalyzer()
+    private var speakerAnalysisInFlight = false
+    private var speakerRevisions: [UUID: String] = [:]
     private let capsLock = GlobalCapsLock()
     private let indicator = EdgeIndicator()
     private let statistics = StatisticsStore()
@@ -2838,6 +2843,7 @@ private final class AppDelegate:
             do {
                 if self.activeRecordingSession !== session { try session.finish(duration: session.snapshot.duration) }
                 self.failedRecordingSessions.remove(id)
+                self.speakerRevisions.removeValue(forKey: id)
                 self.transcriptModel.error = nil
                 try self.saveRecordingSession(session)
                 self.pumpRecordingChunks()
@@ -2860,6 +2866,8 @@ private final class AppDelegate:
                     try FileManager.default.removeItem(at: session.directory)
                     self.recordingSessions.removeValue(forKey: id)
                     self.failedRecordingSessions.remove(id)
+                    self.speakerRevisions.removeValue(forKey: id)
+                    self.speakerAnalyzer.release(sessionID: id)
                 }
                 try self.history.delete(id: id)
                 self.transcriptModel.entries = self.history.entries
@@ -2926,10 +2934,53 @@ private final class AppDelegate:
             // History is durable before the audio journal is removed.
             if FileManager.default.fileExists(atPath: session.directory.path) { try FileManager.default.removeItem(at: session.directory) }
             recordingSessions.removeValue(forKey: snapshot.id)
+            speakerRevisions.removeValue(forKey: snapshot.id)
+            speakerAnalyzer.release(sessionID: snapshot.id)
+        }
+    }
+
+    private func pumpSpeakerAnalysis() {
+        guard !exitRequested, !speakerAnalysisInFlight else { return }
+        let candidates = recordingSessions.values.sorted { $0.snapshot.createdAt < $1.snapshot.createdAt }
+        guard let session = candidates.first(where: {
+            let snapshot = $0.snapshot
+            return snapshot.speakerState == .pending &&
+                speakerRevisions[snapshot.id] != "\(snapshot.chunks.filter(\.sealed).count):\(snapshot.stopped)"
+        }) else { return }
+        let snapshot = session.snapshot
+        speakerRevisions[snapshot.id] = "\(snapshot.chunks.filter(\.sealed).count):\(snapshot.stopped)"
+        speakerAnalysisInFlight = true
+        speakerAnalyzer.analyze(snapshot: snapshot, directory: session.directory) { [weak self] result in
+            guard let self else { return }
+            self.speakerAnalysisInFlight = false
+            guard self.recordingSessions[snapshot.id] === session else {
+                self.pumpSpeakerAnalysis()
+                return
+            }
+            do {
+                switch result {
+                case .success(let turns):
+                    try session.updateSpeakers(turns: turns, state: snapshot.stopped ? .complete : .pending)
+                case .failure(let error):
+                    // Speaker failure never fails transcription or removes text.
+                    try session.updateSpeakers(turns: [], state: .unavailable)
+                    self.speakerAnalyzer.release(sessionID: snapshot.id)
+                    DiagnosticLog.write("Speaker analysis unavailable: \(error.localizedDescription)")
+                }
+                try self.saveRecordingSession(session)
+            } catch {
+                // Keep Retry reachable even if final labels could not be saved.
+                self.failedRecordingSessions.insert(snapshot.id)
+                try? self.saveRecordingSession(session)
+                self.transcriptModel.error = "Could not save speaker labels. The recording is still saved locally; use Retry."
+            }
+            self.pumpSpeakerAnalysis()
+            self.refreshActivityUI()
         }
     }
 
     private func pumpRecordingChunks() {
+        pumpSpeakerAnalysis()
         guard !exitRequested, !sessionChunkInFlight, pendingTranscriptions == 0, state != .recording,
               pendingModelActivation == nil, let modelURL = selectedModelURL else { return }
         let candidates = recordingSessions.values.filter { !failedRecordingSessions.contains($0.snapshot.id) }
@@ -2941,13 +2992,14 @@ private final class AppDelegate:
         refreshActivityUI()
         let profile = selectedModel
         let started = Date()
-        let finish: (Result<String, Error>) -> Void = { [weak self] result in
+        let finish: (Result<TranscriptionResult, Error>) -> Void = { [weak self] result in
             guard let self else { return }
             self.sessionChunkInFlight = false
             self.pendingTranscriptions = max(0, self.pendingTranscriptions - 1)
             do {
-                let text = try result.get().trimmingCharacters(in: .whitespacesAndNewlines)
-                try session.complete(chunkID: chunk.id, text: text)
+                let decoded = try result.get()
+                let text = decoded.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                try session.complete(chunkID: chunk.id, text: text, words: decoded.words)
                 try self.saveRecordingSession(session)
                 session.removeCompletedAudio(chunk: chunk)
                 if !text.isEmpty {
@@ -2984,7 +3036,8 @@ private final class AppDelegate:
         }
         let session: RecordingSession
         do {
-            session = try RecordingSession(root: recordingSessionsRoot)
+            session = try RecordingSession(root: recordingSessionsRoot,
+                detectSpeakers: selectedModel.usesParakeetEngine && SpeakerAnalyzer.modelURL != nil)
             recordingSessions[session.snapshot.id] = session
             try saveRecordingSession(session)
         } catch { transcriptModel.error = "Could not save recording: \(error.localizedDescription)"; return }
@@ -3415,6 +3468,8 @@ private final class AppDelegate:
         settings.selectedModelID = displayedModel.rawValue
         settings.selectedModelName = displayedModel.displayName
         settings.canSelectModel = pendingModelActivation == nil && state == .idle && pendingTranscriptions == 0
+        settings.speakerDetection = SpeakerAnalyzer.modelURL == nil ? "Local model unavailable" :
+            (selectedModel.usesParakeetEngine ? "Automatic for recordings · up to 4 voices per source" : "Choose Parakeet to label speakers in recordings")
         settings.usage = String(format: "%.2f hours · %@ words · %@ dictations",
                                 snapshot.audioSeconds / 3600, snapshot.words.formatted(), snapshot.dictations.formatted())
         settings.performance = snapshot.dictations == 0 ? "No completed dictations" :
@@ -3592,7 +3647,7 @@ private final class AppDelegate:
                     try? FileManager.default.removeItem(at: cafURL)
                     try? FileManager.default.removeItem(at: wavURL)
                     self?.finishTranscription(
-                        result,
+                        result.map(\.text),
                         jobID: jobID,
                         source: source,
                         createdAt: createdAt,

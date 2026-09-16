@@ -20,6 +20,7 @@ final class LuxitSettingsModel: ObservableObject {
     @Published var selectedModelName = ""
     @Published var canSelectModel = true
     @Published var permissions = ""
+    @Published var speakerDetection = ""
     @Published var usage = ""
     @Published var performance = ""
     var onSelectModel: ((String) -> Void)?
@@ -363,16 +364,40 @@ private struct TranscriptTextView: View {
         _following = State(initialValue: entry.recordingState?.inProgress == true)
     }
 
+    private func speakerText(_ spans: [SpeakerTextSpan]) -> Text {
+        let colors: [Color] = [.cyan, .purple, .mint, .orange]
+        return spans.enumerated().reduce(Text("")) { text, item in
+            let (index, span) = item
+            let label = span.speaker.map { "Speaker \($0 + 1)" } ?? "?"
+            let color = span.speaker.map { colors[max(0, $0) % colors.count] } ?? .secondary
+            let gap = index == 0 ? "" : " "
+            let marker = Text("[\(label)] ").font(.system(size: 11, weight: .medium)).foregroundColor(color)
+            return Text("\(text)\(gap)\(marker)\(span.text)")
+        }
+    }
+
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 16) {
                     if let segments = entry.displaySegments {
+                        if entry.speakerState != nil {
+                            Text(entry.speakerState == .unavailable
+                                 ? "Speaker labels unavailable · transcript preserved"
+                                 : "Estimated speakers · up to 4 per source · ? means unclear")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
                         ForEach(segments) { segment in
                             VStack(alignment: .leading, spacing: 5) {
                                 Text("\(TranscriptSegment.timestamp(segment.start)) · \(segment.sourceTitle)")
                                     .font(.caption).foregroundStyle(.secondary)
-                                Text(segment.text).font(.system(size: 15)).lineSpacing(5).textSelection(.enabled)
+                                if let spans = segment.speakerSpans, spans.contains(where: { $0.speaker != nil }) {
+                                    // Inline markers preserve the paragraph's flow when
+                                    // just a word or two has an uncertain speaker.
+                                    speakerText(spans).font(.system(size: 15)).lineSpacing(5).textSelection(.enabled)
+                                } else {
+                                    Text(segment.text).font(.system(size: 15)).lineSpacing(5).textSelection(.enabled)
+                                }
                             }.frame(maxWidth: .infinity, alignment: .leading)
                         }
                         if entry.recordingState?.inProgress == true {
@@ -481,6 +506,8 @@ private struct LuxitSettingsView: View {
                         }
                     }
                 }.background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 12))
+                row("Speaker detection", detail: model.speakerDetection, icon: "person.2.wave.2", accessory: nil)
+                    .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 12))
                 action("Permissions", detail: model.permissions, icon: "lock.shield", perform: model.onPermissions)
                 action("Vocabulary", detail: "Names and words you use", icon: "text.book.closed", perform: model.onVocabulary)
                 row("Usage", detail: model.usage + "\n" + model.performance, icon: "chart.bar", accessory: nil)

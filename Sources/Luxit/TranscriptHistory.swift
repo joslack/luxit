@@ -26,6 +26,14 @@ struct TranscriptSegment: Codable, Equatable, Identifiable {
     let text: String
     var duration: TimeInterval? = nil
     var additionalSource: RecordingAudioSource? = nil
+    var speakerSpans: [SpeakerTextSpan]? = nil
+    var labeledText: String {
+        guard let speakerSpans, speakerSpans.contains(where: { $0.speaker != nil }) else { return text }
+        return speakerSpans.map { span in
+            let name = span.speaker.map { "Speaker \($0 + 1)" } ?? "Speaker unclear"
+            return "\(name)\n\(span.text)"
+        }.joined(separator: "\n\n")
+    }
     var sourceTitle: String { additionalSource == nil ? source.title : "Computer + Microphone" }
     static func timestamp(_ time: TimeInterval) -> String {
         let seconds = max(0, Int(time))
@@ -126,10 +134,11 @@ struct TranscriptEntry: Identifiable, Codable, Equatable {
     let text: String
     var segments: [TranscriptSegment]? = nil
     var recordingState: RecordingTranscriptState? = nil
+    var speakerState: SpeakerAnalysisState? = nil
     var displaySegments: [TranscriptSegment]? { segments.map(TranscriptSegment.coalescingSources) }
     var displayText: String {
         guard let segments = displaySegments else { return text }
-        return segments.map { "[\(TranscriptSegment.timestamp($0.start))] \($0.sourceTitle)\n\($0.text)" }
+        return segments.map { "[\(TranscriptSegment.timestamp($0.start))] \($0.sourceTitle)\n\($0.labeledText)" }
             .joined(separator: "\n\n")
     }
 }

@@ -27,6 +27,16 @@ char * ew_parakeet_transcribe(
     int n_threads
 );
 void ew_whisper_string_free(char * value);
+typedef struct {
+    const char * text;
+    double start;
+    double end;
+    int begins_word;
+} ew_timed_token;
+// Strings remain owned by the context until the next decode. Free the array
+// after copying its bytes; only call immediately after a successful decode.
+ew_timed_token * ew_parakeet_timed_tokens(void * context, int * count);
+void ew_timed_tokens_free(ew_timed_token * tokens);
 void ew_whisper_free(void * context);
 void ew_parakeet_free(void * context);
 const char * ew_whisper_last_error(void);
