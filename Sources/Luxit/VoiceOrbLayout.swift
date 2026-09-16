@@ -1,7 +1,7 @@
 import CoreGraphics
 
 enum VoiceOrbLayout {
-    static let size = CGSize(width: 280, height: 280)
+    static let size = CGSize(width: 320, height: 320)
     static let inset: CGFloat = 18
 
     static func frame(in visibleFrame: CGRect) -> CGRect {

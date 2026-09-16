@@ -1,5 +1,6 @@
 #ifndef EDGE_WHISPER_BRIDGE_H
 #define EDGE_WHISPER_BRIDGE_H
+#include "VoiceActivityBridge.h"
 
 #ifdef __cplusplus
 extern "C" {

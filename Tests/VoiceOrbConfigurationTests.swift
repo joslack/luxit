@@ -14,16 +14,25 @@ private func expect(
 @main
 private enum VoiceOrbConfigurationTests {
     static func main() {
+        expect(VoiceOrbMotion.framesPerSecond == 60,
+               "cloud animation has one bounded 60 Hz rendering cadence")
+        expect(VoiceOrbMotion.frameElapsed(since: 10, now: 10 + 1.0 / 120) < 0.009,
+               "high refresh animation keeps its normal frame time")
+        expect(VoiceOrbMotion.frameElapsed(since: 10, now: 3610) == 1.0 / 30,
+               "resuming after an hour idle advances one frame, not the full appearance")
+        expect(VoiceOrbMotion.frameElapsed(since: 11, now: 10) == 0,
+               "clock changes cannot reverse the materialization")
         expect(
             VoiceOrbMotion.speedScale == 1.08 &&
-                VoiceOrbMotion.currentScale == 0.86 &&
-                VoiceOrbMotion.jitterScale == 0.58 &&
+                VoiceOrbMotion.currentScale < 1 &&
+                VoiceOrbMotion.attractorScale < 1 &&
+                VoiceOrbMotion.jitterScale < 0.5 &&
                 VoiceOrbMotion.spatialScale == 1.08 &&
                 VoiceOrbMotion.voiceResponseScale == 1.65 &&
                 VoiceOrbMotion.idleVisualFloor == 0.12 &&
-                VoiceOrbMotion.baseRadius == 78 &&
-                VoiceOrbMotion.voiceRadiusGrowth == 10,
-            "the sole orb motion remains the attractor behavior"
+                VoiceOrbMotion.baseRadius >= 100 &&
+                VoiceOrbMotion.voiceRadiusGrowth >= 10,
+            "the cloud retains a full resting volume with continuous independent motion"
         )
         expect(
             VoiceOrbMotion.minimumParticleRadius == 0.55 &&
@@ -183,6 +192,59 @@ private enum VoiceOrbConfigurationTests {
         expect(frame.minY == visibleFrame.minY + VoiceOrbLayout.inset,
                "orb is inset from the bottom edge")
 
+        expect(VoiceOrbMotion.voiceSpeed(level: 0.6) > VoiceOrbMotion.voiceSpeed(level: 0) * 8,
+               "speech rapidly accelerates independent particle paths while silence stays calm")
+        expect(VoiceOrbMotion.flowSpeed(level: 0.6) > VoiceOrbMotion.flowSpeed(level: 0) * 4,
+               "voice brings visible energy to the cloud's larger currents")
+        expect(VoiceOrbMotion.voiceSpeed(level: -1) == VoiceOrbMotion.voiceSpeed(level: 0) &&
+               VoiceOrbMotion.flowSpeed(level: 2) == VoiceOrbMotion.flowSpeed(level: 1),
+               "invalid levels cannot reverse or explode motion")
+        expect(VoiceOrbMotion.voiceSpeed(level: 0) == 0.45 &&
+               VoiceOrbMotion.flowSpeed(level: 0) == 0.65 &&
+               VoiceOrbMotion.particleJitterScale(level: 0) == VoiceOrbMotion.jitterScale,
+               "added speech energy leaves the resting field unchanged")
+        let mediumVoice = VoiceOrbMotion.voiceSpeed(level: 0.6)
+        let mediumFlow = VoiceOrbMotion.flowSpeed(level: 0.6)
+        expect(mediumVoice > 5.5 && mediumVoice < 6 && mediumFlow > 3.2 && mediumFlow < 3.5,
+               "ordinary speech has a modest speed lift rather than doubling the motion")
+        let mediumJitter = VoiceOrbMotion.particleJitterScale(level: 0.6)
+        expect(mediumJitter > VoiceOrbMotion.jitterScale * 1.1 &&
+               VoiceOrbMotion.particleJitterScale(level: 1) < VoiceOrbMotion.jitterScale * 1.2,
+               "independent motion gains texture during speech with a restrained maximum")
+        expect(VoiceOrbMotion.particleJitterScale(level: -1) == VoiceOrbMotion.jitterScale &&
+               VoiceOrbMotion.particleJitterScale(level: 2) == VoiceOrbMotion.particleJitterScale(level: 1),
+               "out-of-range levels cannot amplify particle jitter beyond its bound")
+        let anchor = SIMD2<Float>(15, 0)
+        var dissolved = VoiceOrbDissolution()
+        dissolved.advance(anchor: anchor, pointer: .zero, seed: 1, elapsed: 1 / 60)
+        expect(dissolved.amount > 0 && dissolved.amount < 0.3 && dissolved.offset.x < 1,
+               "cursor entry starts dissolving without a position or opacity jump")
+        for _ in 0..<60 { dissolved.advance(anchor: anchor, pointer: .zero, seed: 1, elapsed: 1 / 60) }
+        expect(dissolved.amount > 0.99 && dissolved.offset.x > 10,
+               "a stationary cursor holds the particles dissolved and displaced")
+        let held = dissolved
+        dissolved.advance(anchor: anchor, pointer: nil, seed: 1, elapsed: 1 / 60)
+        expect(dissolved.amount > 0.9 && dissolved.offset.x > held.offset.x * 0.95,
+               "leaving the cloud preserves momentum and begins a gradual reformation")
+        for _ in 0..<180 { dissolved.advance(anchor: anchor, pointer: nil, seed: 1, elapsed: 1 / 60) }
+        expect(dissolved.amount < 0.001 && abs(dissolved.offset.x) < 0.001,
+               "particles fully reform at their moving anchors without permanent drift")
+        var results: [VoiceOrbDissolution] = []
+        for hz in [30, 60, 120] {
+            var state = VoiceOrbDissolution()
+            for _ in 0..<(hz / 2) { state.advance(anchor: .zero, pointer: .zero, seed: 1, elapsed: 1 / Float(hz)) }
+            expect(state.offset.x.isFinite && state.offset.y.isFinite && state.amount > 0.99,
+                   "exact cursor overlap stays finite at every supported cadence")
+            results.append(state)
+        }
+        expect(abs(results[0].offset.x - results[2].offset.x) < 0.3,
+               "the physical response is consistent across display refresh rates")
+        var resumed = held
+        var bounded = held
+        resumed.advance(anchor: anchor, pointer: nil, seed: 1, elapsed: 3600)
+        bounded.advance(anchor: anchor, pointer: nil, seed: 1, elapsed: 1 / 30)
+        expect(resumed.offset == bounded.offset && resumed.amount == bounded.amount,
+               "idle recovery cannot make the particle simulation explode")
         print("VoiceOrbConfigurationTests passed")
     }
 }

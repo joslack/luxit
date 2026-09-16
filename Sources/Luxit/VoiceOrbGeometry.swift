@@ -68,8 +68,8 @@ enum VoiceOrbGeometry {
             let grain = unitHash(index, salt: 71) - 0.5
             let radialCharacter =
                 0.92 +
-                localEnergy * 0.25 +
-                spectralEdge * 0.10 +
+                localEnergy * 0.16 +
+                spectralEdge * 0.055 +
                 grain * (0.040 + localEnergy * 0.050)
             let horizontalCharacter = 0.94 + (centroid - 0.5) * 0.10
             let verticalCharacter = 0.98 - (centroid - 0.5) * 0.08
@@ -100,10 +100,10 @@ enum VoiceOrbGeometry {
                 y: y,
                 radius: pointRadius,
                 intensity: pointIntensity,
-                velocity: 0.42 + unitHash(index, salt: 401) * 2.25,
+                velocity: 0.55 + unitHash(index, salt: 401) * 1.3,
                 flowPhase: unitHash(index, salt: 457) * 2 * .pi,
                 flowPhaseY: unitHash(index, salt: 503) * 2 * .pi,
-                driftScale: 0.62 + unitHash(index, salt: 557) * 1.12
+                driftScale: 0.72 + unitHash(index, salt: 557) * 0.65
             )
         }
     }

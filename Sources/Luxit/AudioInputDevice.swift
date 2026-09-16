@@ -91,6 +91,18 @@ enum SystemAudioInput {
         )
     }
 
+    /// ScreenCaptureKit requires AVCaptureDevice's persistent UID, not the
+    /// numeric Core Audio device ID used by AVAudioEngine. Resolve the same
+    /// preferred input explicitly rather than falling back to the system mic.
+    static func captureDeviceID(for device: AudioInputDevice) throws -> String {
+        guard let uid = deviceString(for: device.id, selector: kAudioDevicePropertyDeviceUID),
+              let captureDevice = AVCaptureDevice(uniqueID: uid),
+              captureDevice.hasMediaType(.audio), captureDevice.isConnected else {
+            throw audioError("Luxit could not open \(device.name) for recording.")
+        }
+        return captureDevice.uniqueID
+    }
+
     static func bind(
         _ input: AVAudioInputNode,
         to device: AudioInputDevice
@@ -117,8 +129,13 @@ enum SystemAudioInput {
     }
 
     private static func deviceName(for deviceID: AudioDeviceID) -> String? {
+        deviceString(for: deviceID, selector: kAudioObjectPropertyName)
+    }
+
+    private static func deviceString(for deviceID: AudioDeviceID,
+                                     selector: AudioObjectPropertySelector) -> String? {
         var address = AudioObjectPropertyAddress(
-            mSelector: kAudioObjectPropertyName,
+            mSelector: selector,
             mScope: kAudioObjectPropertyScopeGlobal,
             mElement: kAudioObjectPropertyElementMain
         )

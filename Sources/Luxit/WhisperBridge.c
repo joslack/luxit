@@ -196,6 +196,7 @@ const char * ew_whisper_last_error(void) {
 }
 
 void * ew_whisper_load(const char * model_path) {
+    luxit_audio_backend_lock();
     ew_error[0] = '\0';
     if (access("/opt/homebrew/opt/ggml/libexec", R_OK) == 0) {
         ggml_backend_load_all_from_path("/opt/homebrew/opt/ggml/libexec");
@@ -213,6 +214,7 @@ void * ew_whisper_load(const char * model_path) {
     if (!context) {
         set_error("Whisper could not load the model.");
     }
+    luxit_audio_backend_unlock();
     return context;
 }
 
@@ -245,7 +247,7 @@ static int ew_parakeet_load_ggml_backends(int use_gpu) {
     return 0;
 }
 
-void * ew_parakeet_load(
+static void * ew_parakeet_load_unlocked(
     const char * model_path,
     const char * library_path,
     int use_gpu,
@@ -283,6 +285,14 @@ void * ew_parakeet_load(
         set_error("Parakeet could not initialize a context.");
         return NULL;
     }
+    return context;
+}
+
+void * ew_parakeet_load(const char * model_path, const char * library_path,
+                      int use_gpu, int gpu_device) {
+    luxit_audio_backend_lock();
+    void * context = ew_parakeet_load_unlocked(model_path, library_path, use_gpu, gpu_device);
+    luxit_audio_backend_unlock();
     return context;
 }
 
@@ -384,10 +394,12 @@ static int vad_has_speech(
         whisper_vad_default_context_params();
     context_params.n_threads = 4;
     context_params.use_gpu = false;
+    luxit_audio_backend_lock();
     struct whisper_vad_context * vad = whisper_vad_init_from_file_with_params(
         vad_model_path,
         context_params
     );
+    luxit_audio_backend_unlock();
     if (!vad) {
         set_error("The voice-activity model could not be loaded.");
         return -1;

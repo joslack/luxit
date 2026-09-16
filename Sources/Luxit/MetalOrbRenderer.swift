@@ -3,14 +3,30 @@ import Metal
 import MetalKit
 import QuartzCore
 
-final class MetalOrbRenderer: NSObject, MTKViewDelegate {
+final class MetalOrbRenderer {
+    private let renderQueue = DispatchQueue(label: "com.joslack.luxit.orb-render", qos: .userInteractive)
+    private let frameGate = DispatchSemaphore(value: 2)
+    private let resultLock = NSLock()
+    private var unavailableFrames = 0
+    var consecutiveUnavailableFrames: Int {
+        resultLock.lock()
+        defer { resultLock.unlock() }
+        return unavailableFrames
+    }
+    private let metalLayer: CAMetalLayer
     private let device: MTLDevice
     private let commandQueue: MTLCommandQueue
     private let pipeline: MTLRenderPipelineState
     private weak var view: MTKView?
-    private var particleBuffer: MTLBuffer?
+    private var particleBuffers: [MTLBuffer?] = [nil, nil]
+    private var bufferIndex = 0
+    private var particleValues: [Float] = []
     private var particleCount = 0
-    private var uniformValues = [Float](repeating: 0, count: 29)
+    // GPU-only state survives frames; tracked resources on one command queue
+    // serialize access. Each point vertex owns exactly two float4 elements.
+    private var interactionBuffer: MTLBuffer?
+    private var lastFrameUptime = ProcessInfo.processInfo.systemUptime
+    private var uniformValues = [Float](repeating: 0, count: 30)
     private var lastSpectrum: [CGFloat] = []
     private var lastLevel: CGFloat = -1
 
@@ -21,6 +37,8 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
         else {
             return nil
         }
+        guard let metalLayer = view.layer as? CAMetalLayer else { return nil }
+        self.metalLayer = metalLayer
         self.device = device
         self.commandQueue = commandQueue
         view.device = device
@@ -45,6 +63,8 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
             metalLayer.contentsHeadroom =
                 VoiceOrbMotion.maximumParticleEDRGain
             metalLayer.edrMetadata = nil
+            metalLayer.maximumDrawableCount = 3
+            metalLayer.presentsWithTransaction = false
         }
 
         do {
@@ -79,8 +99,6 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
         }
 
         self.view = view
-        super.init()
-        view.delegate = self
         DiagnosticLog.write("Metal orb renderer initialized")
     }
 
@@ -98,7 +116,9 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
         highlight: NSColor,
         bounds: NSRect
     ) {
-        guard bounds.width > 0, bounds.height > 0 else { return }
+        guard bounds.width > 0, bounds.height > 0,
+              view?.window?.isVisible == true,
+              frameGate.wait(timeout: .now()) == .success else { return }
         let processing = max(0, min(1, processingProgress))
         let processingBlend =
             VoiceOrbMotion.processingGeometryBlend(processing)
@@ -110,18 +130,7 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
                 VoiceOrbMotion.processingLevelFloor * processingBlend
             )
         )
-        let strongestBand = spectrum.max() ?? 0
-        let normalizedSpectrum = strongestBand > 0
-            ? spectrum.map { max(0, min(1, $0 / strongestBand)) }
-            : spectrum
-        if normalizedSpectrum != lastSpectrum || displayLevel != lastLevel {
-            rebuildParticles(
-                spectrum: normalizedSpectrum,
-                level: displayLevel
-            )
-            lastSpectrum = normalizedSpectrum
-            lastLevel = displayLevel
-        }
+        let normalizedSpectrum = spectrum
 
         let progress = max(0, min(1, completion))
         let completionAlpha =
@@ -163,9 +172,9 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
         uniformValues[20] = Float(max(1, backingScale))
         uniformValues[21] = Float(max(0, min(1, appearance)))
         uniformValues[22] = Float(VoiceOrbMotion.currentScale)
-        uniformValues[23] = Float(VoiceOrbMotion.jitterScale)
+        uniformValues[23] = Float(VoiceOrbMotion.particleJitterScale(level: level))
         uniformValues[24] = Float(VoiceOrbMotion.spatialScale)
-        uniformValues[25] = 1
+        uniformValues[25] = Float(VoiceOrbMotion.attractorScale)
         uniformValues[26] = Float(VoiceOrbMotion.voiceResponseScale)
         uniformValues[27] = Float(
             VoiceOrbMotion.materializationFieldRadius(
@@ -180,7 +189,23 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
             availableHeadroom: availableHeadroom
         )
         uniformValues[28] = Float(edrGain)
-        view?.draw()
+        let now = ProcessInfo.processInfo.systemUptime
+        uniformValues[29] = Float(VoiceOrbMotion.frameElapsed(since: lastFrameUptime, now: now))
+        lastFrameUptime = now
+        let uniforms = uniformValues
+        // nextDrawable may wait for WindowServer. Never do that on AppKit's
+        // event thread. Two independent buffers let a new frame be prepared
+        // while the previous presentation completes, without growing a queue.
+        renderQueue.async { [self] in
+            autoreleasepool {
+                if normalizedSpectrum != lastSpectrum || displayLevel != lastLevel {
+                    rebuildParticles(spectrum: normalizedSpectrum, level: displayLevel)
+                    lastSpectrum = normalizedSpectrum
+                    lastLevel = displayLevel
+                }
+                render(uniforms: uniforms)
+            }
+        }
     }
 
     private func rebuildParticles(spectrum: [CGFloat], level: CGFloat) {
@@ -201,49 +226,63 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
             values.append(Float(point.driftScale))
         }
         particleCount = points.count
-        particleBuffer = device.makeBuffer(
-            bytes: values,
-            length: values.count * MemoryLayout<Float>.stride,
-            options: .storageModeShared
-        )
+        particleValues = values
     }
 
-    func draw(in view: MTKView) {
-        guard
-            particleCount > 0,
-            let particleBuffer,
-            let descriptor = view.currentRenderPassDescriptor,
-            let drawable = view.currentDrawable,
-            let commandBuffer = commandQueue.makeCommandBuffer(),
-            let encoder = commandBuffer.makeRenderCommandEncoder(
-                descriptor: descriptor
-            )
-        else {
+    private func render(uniforms: [Float]) {
+        let index = bufferIndex
+        let byteCount = particleValues.count * MemoryLayout<Float>.stride
+        if particleBuffers[index] == nil || particleBuffers[index]!.length < byteCount {
+            particleBuffers[index] = device.makeBuffer(length: byteCount, options: .storageModeShared)
+        }
+        if interactionBuffer == nil || interactionBuffer!.length != byteCount {
+            interactionBuffer = device.makeBuffer(length: byteCount, options: .storageModeShared)
+            if let interactionBuffer { memset(interactionBuffer.contents(), 0, byteCount) }
+        }
+        guard particleCount > 0, let particleBuffer = particleBuffers[index], let interactionBuffer,
+              let drawable = metalLayer.nextDrawable(),
+              let commandBuffer = commandQueue.makeCommandBuffer() else {
+            finishFrame(succeeded: false)
+            return
+        }
+        // The command queue completes in order and the two-slot frame gate
+        // protects each buffer until its previous GPU use has completed.
+        particleValues.withUnsafeBytes { bytes in
+            particleBuffer.contents().copyMemory(from: bytes.baseAddress!, byteCount: byteCount)
+        }
+        let descriptor = MTLRenderPassDescriptor()
+        descriptor.colorAttachments[0].texture = drawable.texture
+        descriptor.colorAttachments[0].loadAction = .clear
+        descriptor.colorAttachments[0].storeAction = .store
+        descriptor.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
+        guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) else {
+            finishFrame(succeeded: false)
             return
         }
         encoder.setRenderPipelineState(pipeline)
         encoder.setVertexBuffer(particleBuffer, offset: 0, index: 0)
-        uniformValues.withUnsafeBytes { bytes in
-            encoder.setVertexBytes(
-                bytes.baseAddress!,
-                length: bytes.count,
-                index: 1
-            )
+        encoder.setVertexBuffer(interactionBuffer, offset: 0, index: 2)
+        uniforms.withUnsafeBytes { bytes in
+            encoder.setVertexBytes(bytes.baseAddress!, length: bytes.count, index: 1)
         }
-        encoder.drawPrimitives(
-            type: .point,
-            vertexStart: 0,
-            vertexCount: particleCount
-        )
+        encoder.drawPrimitives(type: .point, vertexStart: 0, vertexCount: particleCount)
         encoder.endEncoding()
         commandBuffer.present(drawable)
+        commandBuffer.addCompletedHandler { [self] command in
+            finishFrame(succeeded: command.status == .completed)
+        }
+        // Failed drawable/encoder acquisition must reuse this unused slot.
+        // Advancing on failure could wrap around to a buffer still on the GPU.
+        bufferIndex = (bufferIndex + 1) % particleBuffers.count
         commandBuffer.commit()
     }
 
-    func mtkView(
-        _ view: MTKView,
-        drawableSizeWillChange size: CGSize
-    ) {}
+    private func finishFrame(succeeded: Bool) {
+        resultLock.lock()
+        unavailableFrames = succeeded ? 0 : unavailableFrames + 1
+        resultLock.unlock()
+        frameGate.signal()
+    }
 
     private static func components(
         of color: NSColor
@@ -307,7 +346,8 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
     vertex OrbVertexOut voiceOrbVertex(
         uint vertexID [[vertex_id]],
         device const float *particles [[buffer(0)]],
-        constant float *u [[buffer(1)]]
+        constant float *u [[buffer(1)]],
+        device float4 *interaction [[buffer(2)]]
     ) {
         uint offset = vertexID * 8;
         float2 base = float2(particles[offset], particles[offset + 1]);
@@ -404,16 +444,28 @@ final class MetalOrbRenderer: NSObject, MTKViewDelegate {
             float2(u[0] * 0.5, u[1] * 0.5) +
             mix(spawn, settled, condensation);
 
-        float dissipation = 0.0;
+        float4 motion = interaction[vertexID * 2];
+        float dissipation = interaction[vertexID * 2 + 1].x;
+        if (appearance < 0.01) { motion = float4(0.0); dissipation = 0.0; }
+        float influence = 0.0;
+        float2 force = float2(0.0);
         if (u[12] > 0.5) {
             float2 delta = position - float2(u[10], u[11]);
             float distance = length(delta);
-            dissipation = max(0.0, 1.0 - distance / 42.0);
-            if (dissipation > 0.0) {
-                position += normalize(delta + float2(0.0001)) *
-                    dissipation * 13.0;
-            }
+            influence = 1.0 - smoothstep(\(VoiceOrbDissolution.innerRadius), \(VoiceOrbDissolution.outerRadius), distance);
+            float2 direction = distance > 0.001 ? delta / distance : float2(cos(flowPhaseX), sin(flowPhaseX));
+            float2 tangent = float2(-direction.y, direction.x);
+            force = (direction * \(VoiceOrbDissolution.radialForce) +
+                tangent * (\(VoiceOrbDissolution.tangentialForce) * sin(flowPhaseX))) * influence;
         }
+        float dt = u[29];
+        motion.zw += (force - motion.xy * \(VoiceOrbDissolution.spring) - motion.zw * \(VoiceOrbDissolution.damping)) * dt;
+        motion.xy += motion.zw * dt;
+        dissipation += (influence - dissipation) * (1.0 - exp(-dt /
+            (influence > dissipation ? \(VoiceOrbDissolution.attack) : \(VoiceOrbDissolution.release))));
+        interaction[vertexID * 2] = motion;
+        interaction[vertexID * 2 + 1] = float4(dissipation, 0.0, 0.0, 0.0);
+        position += motion.xy;
 
         float edgeFeather = pow(
             max(0.0, 1.0 - smoothstep(0.62, 1.34, radialDistance)),

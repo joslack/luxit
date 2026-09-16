@@ -91,6 +91,10 @@ private enum VoiceOrbGeometryTests {
         expect(jitterA == jitterRepeated, "particle jitter should be repeatable")
         expect(jitterA != jitterLater, "particle jitter should evolve over time")
         expect((-1...1).contains(jitterA), "particle jitter should remain bounded")
+        let nearby = VoiceOrbGeometry.points(spectrum: low.map { $0 * 0.99 }, level: 0.8)
+        let maxShift = zip(first, nearby).map { hypot($0.x - $1.x, $0.y - $1.y) }.max()!
+        expect(maxShift < 0.004, "small spectral changes cannot rearrange particle positions abruptly")
+        expect(first.allSatisfy { $0.velocity <= 1.85 }, "particle paths stay within the coherent flow speed")
         print("VoiceOrbGeometryTests passed")
     }
 }
