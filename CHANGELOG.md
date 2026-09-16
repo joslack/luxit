@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.12.0 — 2026-09-16
 
 - Add a compact top-center panel with searchable local dictation and recording
   history, copy and delete controls, and matching settings.

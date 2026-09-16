@@ -24,8 +24,15 @@ The signing-identity step is needed only once. It lets macOS keep Luxit's
 permissions when you update the app. Later updates only need:
 
 ```sh
+git pull --ff-only
 ./scripts/install.sh
 ```
+
+For a versioned download, open the [latest release](https://github.com/joslack/luxit/releases/latest)
+and download **Source code (zip)**. Unzip it, open Terminal in that folder, and
+run `./scripts/create-local-signing-identity.sh` followed by
+`./scripts/install.sh`. Each Mac keeps its own signing identity,
+permissions, models, and transcript history.
 
 On first launch, approve **Microphone**, **Accessibility**, and
 **Input Monitoring** access. Luxit then runs from the menu bar and starts
