@@ -120,10 +120,14 @@ final class ComputerAudioRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
             return
         }
         stream = nil
+        // Stop the timeline now, but drain capture callbacks already in flight.
+        // Rejecting all callbacks here could cut off the last spoken syllable.
+        let stoppedAt = CMClockGetTime(CMClockGetHostTimeClock()).seconds
+        queue.sync { timeline?.pause(at: stoppedAt) }
         let seconds = duration
-        queue.sync { acceptingAudio = false }
         capture.stopCapture { [self] stopError in
             queue.async { [self] in
+                acceptingAudio = false
                 let result: Result<ComputerRecording, Error>
                 do {
                     // Seal durable chunks even if capture was interrupted.

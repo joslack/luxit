@@ -29,6 +29,30 @@ enum TranscriptHistoryTests {
         let oldEntries = try JSONDecoder().decode([TranscriptEntry].self, from: Data(legacy.utf8))
         expect(oldEntries.first?.text == "Older transcript" && oldEntries.first?.segments == nil,
                "Existing history remains readable after adding live transcript segments")
+        let computer = TranscriptSegment(id: UUID(), start: 2, source: .computer, text: "Please send the draft today.", duration: 3)
+        let echo = TranscriptSegment(id: UUID(), start: 2.1, source: .microphone, text: "Please send the draft today!", duration: 3)
+        let original = [computer, echo]
+        let merged = TranscriptSegment.coalescingSources(original)
+        expect(merged.count == 1 && merged[0].additionalSource == .microphone,
+               "Matching simultaneous paragraphs appear once with both sources credited")
+        var entry = TranscriptEntry(createdAt: Date(), duration: 5, source: .recording,
+                                    text: "", segments: original, recordingState: .recording)
+        try store.append(entry)
+        expect(TranscriptHistory(url: url).entries.first?.segments == original && entry.displaySegments?.count == 1,
+               "Presentation merging preserves both original captures on disk")
+        let reply = TranscriptSegment(id: UUID(), start: 5.2, source: .microphone, text: computer.text, duration: 3)
+        expect(TranscriptSegment.coalescingSources([computer, reply]).count == 2,
+               "A person repeating the same words later is kept")
+        let unique = TranscriptSegment(id: UUID(), start: 2.1, source: .microphone, text: "Please send the draft tomorrow.", duration: 3)
+        expect(TranscriptSegment.coalescingSources([computer, unique]).count == 2,
+               "Different words in overlapping speech are never removed")
+        let yes = TranscriptSegment(id: UUID(), start: 2, source: .computer, text: "Yes", duration: 1)
+        let agreement = TranscriptSegment(id: UUID(), start: 2.1, source: .microphone, text: "Yes", duration: 1)
+        expect(TranscriptSegment.coalescingSources([yes, agreement]).count == 2,
+               "Short individual answers aren't treated as playback duplicates")
+        let legacySegments = "[{\"id\":\"00000000-0000-0000-0000-000000000002\",\"start\":0,\"source\":\"microphone\",\"text\":\"Older paragraph\"}]"
+        entry.segments = try JSONDecoder().decode([TranscriptSegment].self, from: Data(legacySegments.utf8))
+        expect(entry.displaySegments?.first?.text == "Older paragraph", "Older paragraphs without duration remain readable")
         let damaged = Data("unreadable history".utf8)
         try damaged.write(to: url)
         let broken = TranscriptHistory(url: url)

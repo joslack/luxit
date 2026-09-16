@@ -24,9 +24,53 @@ struct TranscriptSegment: Codable, Equatable, Identifiable {
     let start: TimeInterval
     let source: RecordingAudioSource
     let text: String
+    var duration: TimeInterval? = nil
+    var additionalSource: RecordingAudioSource? = nil
+    var sourceTitle: String { additionalSource == nil ? source.title : "Computer + Microphone" }
     static func timestamp(_ time: TimeInterval) -> String {
         let seconds = max(0, Int(time))
         return String(format: "%02d:%02d", seconds / 60, seconds % 60)
+    }
+
+    /// Collapse only matching, simultaneous paragraphs from different capture
+    /// sources. Original segments stay in history; this is presentation only.
+    static func coalescingSources(_ segments: [TranscriptSegment]) -> [TranscriptSegment] {
+        func words(_ text: String) -> [String] {
+            text.lowercased().split(whereSeparator: \.isWhitespace)
+                .map { $0.filter { $0.isLetter || $0.isNumber } }.filter { !$0.isEmpty }
+        }
+        var computers: [[String]: [Int]] = [:]
+        for i in segments.indices where segments[i].source == .computer {
+            let key = words(segments[i].text)
+            if key.count >= 2 { computers[key, default: []].append(i) }
+        }
+        var paired = Set<Int>()
+        var omitted = Set<Int>()
+        for i in segments.indices where segments[i].source == .microphone {
+            let mic = segments[i]
+            let candidates = computers[words(mic.text)] ?? []
+            if let match = candidates.first(where: { j in
+                guard !paired.contains(j) else { return false }
+                let computer = segments[j]
+                if let a = mic.duration, let b = computer.duration {
+                    let overlap = min(mic.start + a, computer.start + b) - max(mic.start, computer.start)
+                    return abs(mic.start - computer.start) <= 1 &&
+                        abs(mic.start + a - computer.start - b) <= 1 &&
+                        overlap > 0 && overlap >= min(a, b) * 0.8
+                }
+                // Older histories lack duration: require very close starts.
+                return abs(mic.start - computer.start) <= 0.3
+            }) {
+                paired.insert(match)
+                omitted.insert(i)
+            }
+        }
+        return segments.indices.compactMap { i in
+            guard !omitted.contains(i) else { return nil }
+            var segment = segments[i]
+            if paired.contains(i) { segment.additionalSource = .microphone }
+            return segment
+        }
     }
 }
 
@@ -38,6 +82,12 @@ struct TranscriptEntry: Identifiable, Codable, Equatable {
     let text: String
     var segments: [TranscriptSegment]? = nil
     var recordingState: RecordingTranscriptState? = nil
+    var displaySegments: [TranscriptSegment]? { segments.map(TranscriptSegment.coalescingSources) }
+    var displayText: String {
+        guard let segments = displaySegments else { return text }
+        return segments.map { "[\(TranscriptSegment.timestamp($0.start))] \($0.sourceTitle)\n\($0.text)" }
+            .joined(separator: "\n\n")
+    }
 }
 
 /// Only transcript text and metadata are retained. Audio remains temporary.

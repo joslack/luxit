@@ -207,7 +207,7 @@ struct TranscriptWindowView: View {
                         Spacer()
                         Button(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc") {
                             NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(entry.text, forType: .string)
+                            NSPasteboard.general.setString(entry.displayText, forType: .string)
                             copied = true
                         }
                         if entry.recordingState == .failed {
@@ -216,29 +216,7 @@ struct TranscriptWindowView: View {
                         Button("Delete", systemImage: "trash", role: .destructive) { confirmingDelete = true }
                             .labelStyle(.iconOnly).disabled(entry.recordingState?.inProgress == true || entry.id == model.activeRecordingID)
                     }
-                    ScrollView {
-                        if let segments = entry.segments {
-                            LazyVStack(alignment: .leading, spacing: 16) {
-                                ForEach(segments) { segment in
-                                    VStack(alignment: .leading, spacing: 5) {
-                                        Text("\(TranscriptSegment.timestamp(segment.start)) · \(segment.source.title)")
-                                            .font(.caption).foregroundStyle(.secondary)
-                                        Text(segment.text).font(.system(size: 15)).lineSpacing(5).textSelection(.enabled)
-                                    }.frame(maxWidth: .infinity, alignment: .leading)
-                                }
-                                if entry.recordingState?.inProgress == true {
-                                    Text(entry.recordingState == .recording ? "Listening… New paragraphs appear at pauses." : "Finishing the remaining audio…")
-                                        .font(.callout).foregroundStyle(.secondary)
-                                } else if segments.isEmpty {
-                                    Text(entry.recordingState == .failed ? "Audio is saved. Retry to finish the transcript." : "No speech detected.")
-                                        .foregroundStyle(.secondary)
-                                }
-                            }.frame(maxWidth: .infinity, alignment: .leading)
-                        } else {
-                            Text(entry.text).font(.system(size: 15)).lineSpacing(5)
-                                .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                    }
+                    TranscriptTextView(entry: entry, paused: model.paused).id(entry.id)
                 }.padding(.horizontal, 18).padding(.bottom, 12)
             } else {
                 empty("Your transcript", detail: model.recording
@@ -284,6 +262,7 @@ struct TranscriptWindowView: View {
                     ScrollView {
                         LazyVStack(spacing: 8) {
                             ForEach(entries) { entry in
+                                let preview = entry.displayText
                                 Button {
                                     model.selectedID = entry.id
                                     tab = 1
@@ -295,7 +274,7 @@ struct TranscriptWindowView: View {
                                             Text(entry.createdAt.formatted(date: .abbreviated, time: .shortened))
                                             Text("· \(clock(entry.duration))")
                                         }.font(.caption).foregroundStyle(.secondary)
-                                        Text(entry.text.isEmpty ? (entry.recordingState?.inProgress == true ? "Recording transcript…" : "No transcript yet") : entry.text).font(.system(size: 13)).lineLimit(2)
+                                        Text(preview.isEmpty ? (entry.recordingState?.inProgress == true ? "Recording transcript…" : "No transcript yet") : preview).font(.system(size: 13)).lineLimit(2)
                                             .frame(maxWidth: .infinity, alignment: .leading)
                                     }.padding(12).background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 16))
                                         .contentShape(RoundedRectangle(cornerRadius: 16))
@@ -327,6 +306,76 @@ struct TranscriptWindowView: View {
 
 /// Only this small header observes meter ticks; search, history, and transcript
 /// layout do not participate in audio-driven updates.
+private struct TranscriptTextView: View {
+    let entry: TranscriptEntry
+    let paused: Bool
+    @State private var following: Bool
+    @State private var userScrolling = false
+    private let bottomID = "transcript-bottom"
+
+    init(entry: TranscriptEntry, paused: Bool) {
+        self.entry = entry
+        self.paused = paused
+        _following = State(initialValue: entry.recordingState?.inProgress == true)
+    }
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 16) {
+                    if let segments = entry.displaySegments {
+                        ForEach(segments) { segment in
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text("\(TranscriptSegment.timestamp(segment.start)) · \(segment.sourceTitle)")
+                                    .font(.caption).foregroundStyle(.secondary)
+                                Text(segment.text).font(.system(size: 15)).lineSpacing(5).textSelection(.enabled)
+                            }.frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        if entry.recordingState?.inProgress == true {
+                            Text(paused ? "Recording paused." : (entry.recordingState == .recording
+                                 ? "Listening… New paragraphs appear at pauses." : "Finishing the remaining audio…"))
+                                .font(.callout).foregroundStyle(.secondary)
+                        } else if segments.isEmpty {
+                            Text(entry.recordingState == .failed ? "Audio is saved. Retry to finish the transcript." : "No speech detected.")
+                                .foregroundStyle(.secondary)
+                        }
+                    } else {
+                        Text(entry.text).font(.system(size: 15)).lineSpacing(5).textSelection(.enabled)
+                    }
+                    Color.clear.frame(height: 1).id(bottomID)
+                }.frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .onScrollGeometryChange(for: Bool.self) { geometry in
+                geometry.contentSize.height - geometry.visibleRect.maxY < 48
+            } action: { _, atBottom in
+                if userScrolling { following = atBottom }
+            }
+            .onScrollPhaseChange { _, phase, context in
+                let manual = phase == .tracking || phase == .interacting || phase == .decelerating
+                if userScrolling && phase == .idle {
+                    following = context.geometry.contentSize.height - context.geometry.visibleRect.maxY < 48
+                }
+                userScrolling = manual
+            }
+            .task(id: entry.displayText) {
+                guard following else { return }
+                // Allow the newly appended paragraph to lay out before moving.
+                await Task.yield()
+                guard !Task.isCancelled, following else { return }
+                withAnimation(.easeOut(duration: 0.18)) { proxy.scrollTo(bottomID, anchor: .bottom) }
+            }
+            .overlay(alignment: .bottomTrailing) {
+                if !following && entry.recordingState?.inProgress == true {
+                    Button("Latest", systemImage: "arrow.down") {
+                        following = true
+                        withAnimation(.easeOut(duration: 0.18)) { proxy.scrollTo(bottomID, anchor: .bottom) }
+                    }.buttonStyle(.borderedProminent).controlSize(.small).padding(6)
+                }
+            }
+        }
+    }
+}
+
 private struct RecordingMeterView: View {
     @ObservedObject var meter: RecordingMeterModel
     let recording: Bool

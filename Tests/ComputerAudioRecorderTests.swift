@@ -40,7 +40,24 @@ enum ComputerAudioRecorderTests {
         precondition(abs(data[20000] - 0.9) < 0.001, "Computer audio outlasts the microphone track")
         precondition(data[30000] == 0, "Missing trailing audio is padded with silence")
         try captureBuffers(in: folder)
+        try finalCaptureBuffers(in: folder)
         print("ComputerAudioRecorderTests passed")
+    }
+
+    private static func finalCaptureBuffers(in folder: URL) throws {
+        let url = folder.appendingPathComponent("last-word.caf")
+        var track: CapturedAudioTrack? = try CapturedAudioTrack(url: url)
+        var timeline = RecordingTimeline(startedAt: 100)
+        _ = try track!.append(sample(at: 100, rate: 16000, channels: 1, frames: 3200, value: 0.2), timeline: timeline)
+        timeline.pause(at: 100.35) // Stop requested before the last callback arrives.
+        _ = try track!.append(sample(at: 100.2, rate: 16000, channels: 1, frames: 3200, value: 0.4), timeline: timeline)
+        track = nil
+        let file = try AVAudioFile(forReading: url)
+        precondition(abs(file.length - 5600) <= 1, "Drain audio captured before Stop, while excluding samples after Stop")
+        let buffer = AVAudioPCMBuffer(pcmFormat: SessionAudioMixer.format, frameCapacity: 5601)!
+        try file.read(into: buffer)
+        precondition(abs(buffer.floatChannelData![0][5500] - 0.4) < 0.001,
+                     "The tail of a word survives a delayed final capture callback")
     }
 
     private static func captureBuffers(in folder: URL) throws {

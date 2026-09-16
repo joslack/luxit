@@ -34,9 +34,11 @@ struct RecordingSessionSnapshot: Codable {
             }
             previous[chunk.source] = chunk
             guard !text.isEmpty else { return nil }
-            return TranscriptSegment(id: chunk.id, start: chunk.start, source: chunk.source, text: text)
+            return TranscriptSegment(id: chunk.id, start: chunk.start, source: chunk.source, text: text,
+                                     duration: chunk.duration)
         }
-        let text = segments.map { "[\(TranscriptSegment.timestamp($0.start))] \($0.source.title)\n\($0.text)" }.joined(separator: "\n\n")
+        let text = TranscriptSegment.coalescingSources(segments)
+            .map { "[\(TranscriptSegment.timestamp($0.start))] \($0.sourceTitle)\n\($0.text)" }.joined(separator: "\n\n")
         return TranscriptEntry(id: id, createdAt: createdAt, duration: duration, source: .recording,
                                text: text, segments: segments, recordingState: state)
     }
