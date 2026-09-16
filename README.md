@@ -62,13 +62,18 @@ Choose **Record** to capture your microphone and computer audio together, such
 as a call or video. The transcript grows in timestamped paragraphs at natural
 pauses, with separate **Microphone** and **Computer** labels. Pause, resume,
 and stop from the top bar. These recordings do not paste into another app.
+The menu-bar icon shows a steady red dot while recording, with no floating cloud
+or recording label. Pausing changes the icon to a pause symbol.
 macOS may ask for **Screen & System Audio Recording** access. Luxit receives
-only audio; it does not save screen images or video. Headphones help keep
-computer playback from also entering your microphone.
+only audio; it does not save screen images or video. macOS shows **Currently
+Sharing** while this capture session is open, including while paused. **Stop**
+ends the capture session. Ordinary Caps Lock dictation uses only the microphone.
+Headphones help keep computer playback from also entering your microphone.
 
 Recordings made with Parakeet also estimate **Speaker 1**, **Speaker 2**, and so
-on within each audio source. Labels appear as analysis catches up; **?** marks
-uncertain words. Detection supports up to ten voices per source and can make
+on within each audio source. Labels appear as analysis catches up; a dotted
+underline marks words with no assigned speaker, not a change of speaker.
+Detection supports up to ten voices per source and can make
 mistakes, especially with quiet or overlapping speech. These numbers reset for
 each recording and do not identify people by name. Whisper recordings retain
 source labels without individual speaker labels.

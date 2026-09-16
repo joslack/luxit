@@ -6,34 +6,32 @@ private func expect(_ condition: @autoclosure () -> Bool, _ message: String) {
 
 @main enum RecordingPresenceTests {
     static func main() {
-        let bar = CGRect(x: 860, y: 944, width: 652, height: 38)
-        let button = CGRect(x: 1100, y: 950, width: 24, height: 24)
-        expect(RecordingPresenceLayout.isReachable(frame: button, visible: true, occluded: false, menuBarRegions: [bar]),
-            "A visible icon does not create a duplicate badge")
-        expect(!RecordingPresenceLayout.isReachable(frame: button, visible: true, occluded: true, menuBarRegions: [bar]),
-            "Overflow occlusion triggers the fallback even when isVisible remains true")
-        expect(!RecordingPresenceLayout.isReachable(frame: button.offsetBy(dx: -350, dy: 0), visible: true,
-            occluded: false, menuBarRegions: [bar]), "An icon behind the camera housing is not reachable")
-        expect(!RecordingPresenceLayout.isReachable(frame: button, visible: false, occluded: false, menuBarRegions: [bar]),
-            "A hidden menu bar still provides access through the badge")
-        expect(!RecordingPresenceLayout.isReachable(frame: .zero, visible: true, occluded: false, menuBarRegions: [.zero]),
-            "An unpositioned status item cannot hide the fallback")
-        let externalBar = CGRect(x: -1920, y: 1056, width: 1920, height: 24)
-        expect(RecordingPresenceLayout.isReachable(frame: CGRect(x: -100, y: 1056, width: 24, height: 24),
-            visible: true, occluded: false, menuBarRegions: [bar, externalBar]), "Secondary displays use their own coordinate space")
-        let screen = CGRect(x: 0, y: 0, width: 1512, height: 982)
-        let badge = RecordingPresenceLayout.badgeFrame(screen: screen, visibleFrame: screen, safeTop: 38, width: 144)
-        expect(badge.maxY <= 944 && badge.midX == screen.midX && badge.height == 26,
-            "The quiet fallback remains below the camera housing even with an auto-hidden menu bar")
-        let narrow = RecordingPresenceLayout.badgeFrame(screen: CGRect(x: -100, y: 0, width: 100, height: 500),
-            visibleFrame: CGRect(x: -100, y: 0, width: 100, height: 476), safeTop: 0, width: 144)
-        expect(narrow.minX >= -100 && narrow.maxX <= 0 && narrow.maxY < 476,
-            "The badge stays on small or offset displays")
-        expect(RecordingPresence.paused.title != RecordingPresence.recording.title &&
-            RecordingPresence.paused.symbol != RecordingPresence.recording.symbol,
-            "Paused recording is distinct without relying on color")
-        expect(RecordingPresence.processing.title == "Luxit · Transcribing" && RecordingPresence.idle.symbol == nil,
-            "Final processing cannot be mistaken for an active microphone")
-        print("RecordingPresenceTests passed (overflow, notch, hidden menu bar, multiple displays, quiet states)")
+        _ = NSApplication.shared
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        defer { NSStatusBar.system.removeStatusItem(item) }
+        let button = item.button!
+        let existingPanels = Set(NSApp.windows.filter { $0 is NSPanel }.map(ObjectIdentifier.init))
+        let length = item.length
+        let controller = RecordingPresenceController(item: item)
+        let dot = button.subviews.first { $0.identifier?.rawValue == "LuxitRecordingDot" }!
+        for state: RecordingPresence in [.idle, .starting, .recording, .paused, .recording, .finishing, .processing, .idle] {
+            controller.update(state, defaultSymbol: "mic.circle.fill", detail: "State: \(state)")
+            expect(dot.isHidden == (state != .recording), "Only active capture displays the recording dot")
+            expect(button.image != nil && button.image?.isTemplate == true,
+                "The icon remains legible in light and dark menu bars")
+            expect(item.length == length && button.title.isEmpty,
+                "Recording does not expand the menu item or add status text")
+            expect(button.toolTip == "Luxit — State: \(state)", "Each state has a readable tooltip")
+        }
+        let pausedSymbol = RecordingPresence.paused.symbol
+        expect(pausedSymbol != RecordingPresence.recording.symbol && pausedSymbol != nil,
+            "Pausing changes the icon without depending on color")
+        item.isVisible = false
+        controller.update(.recording, defaultSymbol: "mic.circle.fill", detail: "Recording")
+        expect(!item.isVisible, "Hidden items stay in the user's chosen menu-bar configuration")
+        expect(Set(NSApp.windows.filter { $0 is NSPanel }.map(ObjectIdentifier.init)) == existingPanels,
+            "Recording never creates an overlay, even when the menu item is hidden")
+        expect(dot.hitTest(.zero) == nil, "The recording mark cannot intercept clicks on Luxit's menu")
+        print("RecordingPresenceTests passed (icon-only states, pause, compact width, no hidden-item overlay)")
     }
 }

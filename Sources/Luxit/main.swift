@@ -2813,11 +2813,6 @@ private final class AppDelegate:
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         }
         recordingPresence = RecordingPresenceController(item: statusItem)
-        recordingPresence?.onOpen = { [weak self] in self?.openTranscriptHistory() }
-        recordingPresence?.transcriptIsVisible = { [weak self] in
-            guard let window = self?.transcriptWindow?.window else { return false }
-            return window.isVisible && window.isOnActiveSpace && window.occlusionState.contains(.visible)
-        }
         recordingPresence?.update(.idle, defaultSymbol: "mic.circle.fill", detail: "Ready — Caps Lock to dictate")
 
         refreshSettings()
