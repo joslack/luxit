@@ -153,6 +153,7 @@ swiftc \
   -module-cache-path "$module_cache" \
   -framework AVFoundation \
   -framework ScreenCaptureKit \
+  "$project_dir/Sources/Luxit/AudioInputDevice.swift" \
   "$project_dir/Sources/Luxit/TranscriptHistory.swift" \
   "$project_dir/Sources/Luxit/ComputerAudioRecorder.swift" \
   "$project_dir/Sources/Luxit/RecordingSession.swift" \

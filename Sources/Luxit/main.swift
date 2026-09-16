@@ -3023,6 +3023,7 @@ private final class AppDelegate:
             switch result {
             case .success:
                 self.transcriptModel.recording = true
+                DiagnosticLog.write("Computer recording started input=\(self.computerRecorder.microphoneName ?? "unknown")")
                 self.indicator.show(.recording)
                 self.refreshActivityUI()
                 let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
@@ -3714,7 +3715,8 @@ private final class AppDelegate:
         recordingEndedWithoutSpeech: Bool = false
     ) {
         if state == .computerRecording {
-            setStatus(transcriptModel.paused ? "Recording paused" : "Recording · transcript updates at pauses", symbol: "record.circle.fill")
+            let microphone = computerRecorder.microphoneName ?? "Microphone"
+            setStatus(transcriptModel.paused ? "Recording paused" : "Recording · \(microphone)", symbol: "record.circle.fill")
         } else if state == .recording {
             indicator.show(.recording)
             setStatus(recordingStatusText(), symbol: "record.circle.fill")

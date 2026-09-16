@@ -21,12 +21,27 @@ final class ComputerAudioRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
     private var levels: [SCStreamOutputType: Float] = [:]
     private var failure: Error?
     private var acceptingAudio = false
+    private(set) var microphoneName: String?
     var onLevel: ((Float) -> Void)?
     var onAudio: ((SCStreamOutputType, UnsafePointer<Float>, Int, Double) -> Void)?
     var onFailure: ((Error) -> Void)?
     var onChunksReady: (() -> Void)?
     var classifySpeech: ((SCStreamOutputType, UnsafePointer<Float>, Int) -> Bool)?
     private var session: RecordingSession?
+
+    static func captureConfiguration(microphoneID: String) -> SCStreamConfiguration {
+        let configuration = SCStreamConfiguration()
+        configuration.width = 2
+        configuration.height = 2
+        configuration.minimumFrameInterval = CMTime(seconds: 1, preferredTimescale: 600)
+        configuration.capturesAudio = true
+        configuration.captureMicrophone = true
+        configuration.microphoneCaptureDeviceID = microphoneID
+        configuration.excludesCurrentProcessAudio = true
+        configuration.sampleRate = 48_000
+        configuration.channelCount = 2
+        return configuration
+    }
 
     func start(session: RecordingSession, completion: @escaping (Result<Void, Error>) -> Void) {
         Task { @MainActor in
@@ -38,15 +53,10 @@ final class ComputerAudioRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
                 guard let display = content.displays.first else {
                     throw recordingError("No display is available for computer audio capture.")
                 }
-                let configuration = SCStreamConfiguration()
-                configuration.width = 2
-                configuration.height = 2
-                configuration.minimumFrameInterval = CMTime(seconds: 1, preferredTimescale: 600)
-                configuration.capturesAudio = true
-                configuration.captureMicrophone = true
-                configuration.excludesCurrentProcessAudio = true
-                configuration.sampleRate = 48_000
-                configuration.channelCount = 2
+                let microphone = try SystemAudioInput.preferredDevice()
+                let configuration = Self.captureConfiguration(
+                    microphoneID: try SystemAudioInput.captureDeviceID(for: microphone))
+                microphoneName = microphone.name
                 let capture = SCStream(filter: SCContentFilter(display: display, excludingWindows: []),
                                        configuration: configuration, delegate: self)
                 try capture.addStreamOutput(self, type: .audio, sampleHandlerQueue: queue)

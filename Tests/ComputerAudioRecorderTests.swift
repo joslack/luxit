@@ -1,10 +1,26 @@
 import AVFoundation
 import Foundation
 import CoreMedia
+import CoreAudio
 
 @main
 enum ComputerAudioRecorderTests {
     static func main() throws {
+        // Reproduce a Bluetooth system default while dictation prefers the
+        // built-in mic. Record must pin that same mic in ScreenCaptureKit.
+        let airPods = AudioInputDevice(id: 99, name: "AirPods", transport: .bluetooth)
+        let builtIn = AudioInputDevice(id: 41, name: "Built-in microphone", transport: .builtIn)
+        let usb = AudioInputDevice(id: 120, name: "USB microphone", transport: .other)
+        let ids: [AudioDeviceID: String] = [99: "bluetooth-input", 41: "built-in-input", 120: "usb-input"]
+        for (systemDefault, expected) in [(airPods, builtIn), (usb, usb), (builtIn, builtIn)] {
+            let preferred = AudioInputPolicy.preferredDevice(defaultDevice: systemDefault,
+                                                            availableDevices: [airPods, builtIn, usb])
+            let configuration = ComputerAudioRecorder.captureConfiguration(microphoneID: ids[preferred.id]!)
+            precondition(configuration.microphoneCaptureDeviceID == ids[expected.id],
+                         "Record pins the same microphone as Caps Lock instead of using ScreenCaptureKit's default")
+            precondition(configuration.capturesAudio && configuration.captureMicrophone,
+                         "Pinning the microphone preserves both recording sources")
+        }
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: folder) }

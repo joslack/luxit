@@ -6,6 +6,8 @@
   history, copy and delete controls, and matching settings.
 - Record microphone and computer audio locally, with a growing timestamped
   transcript, pause/resume, and continued recording while the panel is hidden.
+- Use the same preferred microphone for Record and Caps Lock, including the
+  built-in microphone when a Bluetooth input would otherwise be selected.
 - Transcribe long recordings in bounded chunks and recover unfinished work after
   a restart. Microphone and Computer labels identify sources, not speakers.
 - Make the listening cloud respond more clearly to quiet speech, dissolve around
