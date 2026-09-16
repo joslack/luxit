@@ -60,6 +60,15 @@ cannot be recovered.
 Select text in an open transcript and press **⌘C** to copy it. **⌘A** selects
 the entire transcript; the **Copy** button also copies the whole transcript.
 
+Use **Settings → Corrections** to replace recurring mistakes after transcription,
+including with the default Parakeet model. Add the phrase Luxit hears and what
+you want instead, then **Save**. Turn on **Pattern** to group variants in one
+rule: `Luke\s+(sit|set)` → `Luxit`. Patterns support captured groups such as
+`$1` in the replacement. Rules match whole words or phrases, ignore case, and
+run in their listed order. They apply to new dictations and recording paragraphs
+before saving or pasting; existing transcripts stay unchanged. Your rules stay
+on this Mac. **Vocabulary** supplies recognition hints for Whisper models only.
+
 Choose **Record** to capture your microphone and computer audio together, such
 as a call or video. The transcript grows in timestamped paragraphs at natural
 pauses, with separate **Microphone** and **Computer** labels. Pause, resume,

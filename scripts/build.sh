@@ -88,6 +88,7 @@ swiftc \
   "$project_dir/Sources/Luxit/VoiceOrbDissolution.swift" \
   "$project_dir/Sources/Luxit/MetalOrbRenderer.swift" \
   "$project_dir/Sources/Luxit/SpeakerTranscript.swift" \
+  "$project_dir/Sources/Luxit/TranscriptCorrections.swift" \
   "$project_dir/Sources/Luxit/ParakeetWordTiming.swift" \
   "$project_dir/Sources/Luxit/SpeakerAnalyzer.swift" \
   "$project_dir/Sources/Luxit/TranscriptHistory.swift" \

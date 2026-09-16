@@ -151,6 +151,15 @@ swiftc \
 "$build_dir/TranscriptHistoryTests"
 
 swiftc -swift-version 5 -sdk "$sdk_path" -target arm64-apple-macosx26.0 \
+  -module-cache-path "$module_cache" -framework AVFoundation \
+  "$project_dir/Sources/Luxit/SpeakerTranscript.swift" \
+  "$project_dir/Sources/Luxit/TranscriptHistory.swift" \
+  "$project_dir/Sources/Luxit/TranscriptCorrections.swift" \
+  "$project_dir/Sources/Luxit/RecordingSession.swift" \
+  "$project_dir/Tests/TranscriptCorrectionsTests.swift" -o "$build_dir/TranscriptCorrectionsTests"
+"$build_dir/TranscriptCorrectionsTests"
+
+swiftc -swift-version 5 -sdk "$sdk_path" -target arm64-apple-macosx26.0 \
   -module-cache-path "$module_cache" -framework AppKit \
   "$project_dir/Sources/Luxit/SpeakerTranscript.swift" \
   "$project_dir/Sources/Luxit/TranscriptHistory.swift" \

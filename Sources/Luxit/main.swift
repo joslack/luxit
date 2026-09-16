@@ -2635,6 +2635,7 @@ private final class AppDelegate:
     private let history = TranscriptHistory(url: FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Application Support/EdgeWhisper/History/transcripts.json"))
     private let transcriptModel = TranscriptWindowModel()
+    private lazy var corrections = TranscriptCorrections(url: supportDirectory.appendingPathComponent("corrections.json"))
     private var transcriptWindow: TranscriptWindowController?
     private let computerRecorder = ComputerAudioRecorder()
     private var computerTransition = false
@@ -2831,6 +2832,15 @@ private final class AppDelegate:
         }
         settings.onPermissions = { [weak self] in self?.openPermissions() }
         settings.onVocabulary = { [weak self] in self?.openPrompt() }
+        settings.onLoadCorrections = { [weak self] in self?.refreshCorrections() }
+        settings.onSaveCorrections = { [weak self] replacements in
+            guard let self else { return "Luxit is closing. Try again after reopening it." }
+            do {
+                try self.corrections.save(replacements)
+                self.refreshCorrections()
+                return nil
+            } catch { return error.localizedDescription }
+        }
         settings.onReveal = { [weak self] in self?.showInApplications() }
         settings.onRestart = { [weak self] in self?.requestExit(restart: true) }
         settings.onQuit = { [weak self] in self?.requestExit(restart: false) }
@@ -2997,8 +3007,8 @@ private final class AppDelegate:
             self.sessionChunkInFlight = false
             self.pendingTranscriptions = max(0, self.pendingTranscriptions - 1)
             do {
-                let decoded = try result.get()
-                let text = decoded.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                let decoded = self.correctedTranscription(try result.get())
+                let text = decoded.text
                 try session.complete(chunkID: chunk.id, text: text, words: decoded.words)
                 try self.saveRecordingSession(session)
                 session.removeCompletedAudio(chunk: chunk)
@@ -3453,6 +3463,7 @@ private final class AppDelegate:
     }
 
     private func refreshSettings() {
+        refreshCorrections()
         let settings = transcriptModel.settings
         let snapshot = statistics.snapshot
         let displayedModel = pendingModelActivation ?? selectedModel
@@ -3477,6 +3488,21 @@ private final class AppDelegate:
             capsLock.hasInputMonitoringAccess() ? "Input Monitoring ✓" : "Input Monitoring needed",
             AVCaptureDevice.authorizationStatus(for: .audio) == .authorized ? "Microphone ✓" : "Microphone needed"
         ].joined(separator: " · ")
+    }
+
+    private func refreshCorrections() {
+        corrections.reloadIfNeeded()
+        transcriptModel.settings.corrections = corrections.replacements
+        transcriptModel.settings.correctionsSummary = corrections.summary
+        transcriptModel.settings.correctionsError = corrections.error
+    }
+
+    private func correctedTranscription(_ result: TranscriptionResult) -> TranscriptionResult {
+        let output = corrections.apply(TranscriptionResult(
+            text: result.text.trimmingCharacters(in: .whitespacesAndNewlines), words: result.words))
+        transcriptModel.settings.correctionsSummary = corrections.summary
+        transcriptModel.settings.correctionsError = corrections.error
+        return output
     }
 
     private func toggleDictation(timing: GlobalCapsLock.PressTiming) {
@@ -3700,7 +3726,7 @@ private final class AppDelegate:
         var errorMessage: String?
         switch result {
         case .success(let rawText):
-            let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
+            let text = correctedTranscription(TranscriptionResult(text: rawText)).text
             if !text.isEmpty {
                 statistics.record(
                     audioSeconds: audioDuration,

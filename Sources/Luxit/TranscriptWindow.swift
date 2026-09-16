@@ -23,6 +23,11 @@ final class LuxitSettingsModel: ObservableObject {
     @Published var speakerDetection = ""
     @Published var usage = ""
     @Published var performance = ""
+    @Published var corrections: [TextCorrection] = []
+    @Published var correctionsSummary = "Replace words after transcription"
+    @Published var correctionsError: String?
+    var onLoadCorrections: (() -> Void)?
+    var onSaveCorrections: (([TextCorrection]) -> String?)?
     var onSelectModel: ((String) -> Void)?
     var onPermissions: (() -> Void)?
     var onVocabulary: (() -> Void)?
@@ -55,6 +60,24 @@ final class TranscriptWindowModel: ObservableObject {
 
 private final class TranscriptHostingView: NSHostingView<TranscriptWindowView> {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        // Accessory apps have no standard Edit menu. Route field-editor
+        // shortcuts only when one of this panel's editable fields has focus.
+        if let editor = window?.firstResponder as? NSTextView, editor.isEditable,
+           event.type == .keyDown,
+           event.modifierFlags.intersection([.command, .control, .option, .shift]) == .command {
+            switch event.charactersIgnoringModifiers?.lowercased() {
+            case "a": editor.selectAll(nil); return true
+            case "c": editor.copy(nil); return true
+            case "x": editor.cut(nil); return true
+            case "v": editor.paste(nil); return true
+            case "z": editor.undoManager?.undo(); return true
+            default: break
+            }
+        }
+        return super.performKeyEquivalent(with: event)
+    }
 }
 
 private final class TranscriptPanel: NSPanel {
@@ -448,47 +471,56 @@ private struct RecordingMeterView: View {
 private struct LuxitSettingsView: View {
     @ObservedObject var model: LuxitSettingsModel
     @State private var choosingModel = false
+    @State private var editingCorrections = false
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 8) {
-                VStack(spacing: 0) {
-                    Button { choosingModel.toggle() } label: {
-                        row("Transcription model", detail: model.selectedModelName,
-                            icon: "waveform", accessory: choosingModel ? "chevron.up" : "chevron.down")
-                    }.buttonStyle(.plain)
-                    if choosingModel {
-                        ForEach(model.models) { option in
-                            Button { model.onSelectModel?(option.id) } label: {
-                                HStack(spacing: 10) {
-                                    Image(systemName: model.selectedModelID == option.id ? "checkmark.circle.fill" : "circle")
-                                        .foregroundStyle(model.selectedModelID == option.id ? Color.cyan : .secondary)
-                                    VStack(alignment: .leading, spacing: 3) {
-                                        Text(option.title).font(.system(size: 12, weight: .medium))
-                                        Text(option.detail).font(.caption).foregroundStyle(.secondary)
-                                    }
-                                    Spacer(minLength: 0)
-                                }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
-                                    .contentShape(Rectangle())
-                            }.buttonStyle(.plain).disabled(!model.canSelectModel || !option.available)
+        if editingCorrections {
+            CorrectionsEditor(model: model) { editingCorrections = false }
+        } else {
+            ScrollView {
+                VStack(spacing: 8) {
+                    VStack(spacing: 0) {
+                        Button { choosingModel.toggle() } label: {
+                            row("Transcription model", detail: model.selectedModelName,
+                                icon: "waveform", accessory: choosingModel ? "chevron.up" : "chevron.down")
+                        }.buttonStyle(.plain)
+                        if choosingModel {
+                            ForEach(model.models) { option in
+                                Button { model.onSelectModel?(option.id) } label: {
+                                    HStack(spacing: 10) {
+                                        Image(systemName: model.selectedModelID == option.id ? "checkmark.circle.fill" : "circle")
+                                            .foregroundStyle(model.selectedModelID == option.id ? Color.cyan : .secondary)
+                                        VStack(alignment: .leading, spacing: 3) {
+                                            Text(option.title).font(.system(size: 12, weight: .medium))
+                                            Text(option.detail).font(.caption).foregroundStyle(.secondary)
+                                        }
+                                        Spacer(minLength: 0)
+                                    }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
+                                        .contentShape(Rectangle())
+                                }.buttonStyle(.plain).disabled(!model.canSelectModel || !option.available)
+                            }
                         }
+                    }.background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 12))
+                    row("Speaker detection", detail: model.speakerDetection, icon: "person.2.wave.2", accessory: nil)
+                        .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 12))
+                    action("Permissions", detail: model.permissions, icon: "lock.shield", perform: model.onPermissions)
+                    action("Corrections", detail: model.correctionsSummary, icon: "text.badge.checkmark") {
+                        model.onLoadCorrections?()
+                        editingCorrections = true
                     }
-                }.background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 12))
-                row("Speaker detection", detail: model.speakerDetection, icon: "person.2.wave.2", accessory: nil)
-                    .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 12))
-                action("Permissions", detail: model.permissions, icon: "lock.shield", perform: model.onPermissions)
-                action("Vocabulary", detail: "Names and words you use", icon: "text.book.closed", perform: model.onVocabulary)
-                row("Usage", detail: model.usage + "\n" + model.performance, icon: "chart.bar", accessory: nil)
-                    .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 12))
-                action("Show Luxit in Applications", icon: "folder", perform: model.onReveal)
-                HStack(spacing: 10) {
-                    Text("Luxit " + (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""))
-                        .font(.caption).foregroundStyle(.secondary)
-                    Spacer()
-                    Button("Restart") { model.onRestart?() }
-                    Button("Quit") { model.onQuit?() }
-                }.buttonStyle(.bordered).padding(.vertical, 6)
-            }.padding(.horizontal, 16).padding(.bottom, 12)
+                    action("Vocabulary", detail: "Word hints for Whisper models", icon: "text.book.closed", perform: model.onVocabulary)
+                    row("Usage", detail: model.usage + "\n" + model.performance, icon: "chart.bar", accessory: nil)
+                        .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 12))
+                    action("Show Luxit in Applications", icon: "folder", perform: model.onReveal)
+                    HStack(spacing: 10) {
+                        Text("Luxit " + (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""))
+                            .font(.caption).foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Restart") { model.onRestart?() }
+                        Button("Quit") { model.onQuit?() }
+                    }.buttonStyle(.bordered).padding(.vertical, 6)
+                }.padding(.horizontal, 16).padding(.bottom, 12)
+            }
         }
     }
 
@@ -507,5 +539,78 @@ private struct LuxitSettingsView: View {
     private func action(_ title: String, detail: String? = nil, icon: String, perform: (() -> Void)?) -> some View {
         Button { perform?() } label: { row(title, detail: detail, icon: icon) }
             .buttonStyle(.plain).background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 12))
+    }
+}
+
+private struct CorrectionsEditor: View {
+    @ObservedObject var model: LuxitSettingsModel
+    let close: () -> Void
+    @State private var draft: [TextCorrection]
+    @State private var error: String?
+
+    init(model: LuxitSettingsModel, close: @escaping () -> Void) {
+        self.model = model
+        self.close = close
+        _draft = State(initialValue: model.corrections)
+        _error = State(initialValue: model.correctionsError)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Corrections").font(.headline)
+                Spacer()
+                Button("Cancel", action: close)
+                Button("Save") {
+                    guard let save = model.onSaveCorrections else { return }
+                    error = save(draft)
+                    if error == nil { close() }
+                }.keyboardShortcut("s", modifiers: .command)
+            }
+            Text("Replace whole words or phrases after transcription, ignoring case. Applied in order to new dictations and recording paragraphs.")
+                .font(.caption).foregroundStyle(.secondary)
+            if let error { Text(error).font(.caption).foregroundStyle(.orange) }
+            ScrollView {
+                VStack(spacing: 10) {
+                    if draft.isEmpty {
+                        Text("Add a name or phrase Luxit often gets wrong.")
+                            .font(.system(size: 13)).foregroundStyle(.secondary).padding(.vertical, 20)
+                    }
+                    ForEach($draft) { $rule in
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack(alignment: .bottom, spacing: 8) {
+                                VStack(alignment: .leading, spacing: 5) {
+                                    Text(rule.isPattern ? "Pattern" : "Replace").font(.caption).foregroundStyle(.secondary)
+                                    TextField(rule.isPattern ? "e.g. Luke\\s+(sit|set)" : "e.g. Luke sit", text: $rule.from)
+                                        .accessibilityLabel("Phrase to replace")
+                                }
+                                Image(systemName: "arrow.right").foregroundStyle(.secondary).padding(.bottom, 5)
+                                VStack(alignment: .leading, spacing: 5) {
+                                    Text("With").font(.caption).foregroundStyle(.secondary)
+                                    TextField("e.g. Luxit", text: $rule.to)
+                                        .accessibilityLabel("Replacement phrase")
+                                }
+                                Button {
+                                    draft.removeAll { $0.id == rule.id }
+                                } label: { Image(systemName: "minus.circle") }
+                                    .buttonStyle(.plain).help("Remove replacement").padding(.bottom, 5)
+                            }.textFieldStyle(.roundedBorder)
+                            Toggle("Pattern", isOn: $rule.isPattern).toggleStyle(.checkbox).font(.caption)
+                                .help("Regular expression: use | for alternatives and $1, $2 in the replacement for captured groups.")
+                            if rule.isPattern {
+                                Text("Use | for alternatives, ( ) for groups, and $1 in the replacement to keep a group.")
+                                    .font(.caption2).foregroundStyle(.secondary)
+                            }
+                        }.padding(12)
+                            .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 12))
+                    }
+                    Button("Add replacement", systemImage: "plus") {
+                        draft.append(TextCorrection(from: "", to: ""))
+                    }.frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            Text("Saved only on this Mac. Existing transcripts stay unchanged.")
+                .font(.caption).foregroundStyle(.secondary)
+        }.padding(.horizontal, 16).padding(.bottom, 12)
     }
 }
