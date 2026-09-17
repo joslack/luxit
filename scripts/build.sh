@@ -75,6 +75,8 @@ swiftc \
   -lggml \
   -lggml-base \
   "$project_dir/Sources/Luxit/CapsLockEventLogic.swift" \
+  "$project_dir/Sources/Luxit/KeyboardDeviceMonitor.swift" \
+  "$project_dir/Sources/Luxit/KeyboardRecovery.swift" \
   "$project_dir/Sources/Luxit/AudioInputDevice.swift" \
   "$project_dir/Sources/Luxit/LogSpectrumAnalyzer.swift" \
   "$project_dir/Sources/Luxit/VoiceAnimationFilter.swift" \

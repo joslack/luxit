@@ -2630,6 +2630,21 @@ private final class AppDelegate:
     private var speakerAnalysisInFlight = false
     private var speakerRevisions: [UUID: String] = [:]
     private let capsLock = GlobalCapsLock()
+    private let keyboardDevices = KeyboardDeviceMonitor()
+    private lazy var keyboardRecovery = KeyboardRecovery(log: DiagnosticLog.write) { [weak self] action in
+        guard let self, !self.exitRequested else { return true }
+        if action == .refreshAfterWake {
+            self.indicator.rebuildPanels()
+            self.keyboardReady = self.capsLock.recreate()
+        } else {
+            // Keep a working tap and recording intact during keyboard swaps.
+            // In particular, do not clear the Caps LED here: doing so can
+            // manufacture a flagsChanged event and toggle dictation.
+            _ = self.capsLock.retryImmediateMapping()
+            self.keyboardReady = self.capsLock.start()
+        }
+        return self.keyboardReady && self.capsLock.immediateMappingActive
+    }
     private let indicator = EdgeIndicator()
     private let statistics = StatisticsStore()
     private let history = TranscriptHistory(url: FileManager.default.homeDirectoryForCurrentUser
@@ -2661,13 +2676,9 @@ private final class AppDelegate:
     private var statusText = "Ready — model loads when recording starts"
     private var keyboardReady = false
     private var exitRequested = false
-    private var keyboardRecoveryGeneration = 0
     private var selectedModel = SelectedTranscriptionProfile.saved
     private var pendingModelActivation: SelectedTranscriptionProfile?
     private let modelIdleTimeoutSeconds: TimeInterval = 10 * 60
-    private let keyboardRecoveryDelays: [TimeInterval] = [
-        0.35, 0.75, 1.5, 3.0, 6.0
-    ]
 
     private let supportDirectory = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Application Support/EdgeWhisper")
@@ -2705,6 +2716,12 @@ private final class AppDelegate:
         verifyModel()
         recoverRecordingSessions()
 
+        keyboardDevices.onChange = { [weak self] in
+            guard let self, !self.exitRequested else { return }
+            self.keyboardRecovery.request(.devicesChanged)
+        }
+        keyboardDevices.start()
+
         NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification,
             object: nil,
@@ -2724,7 +2741,8 @@ private final class AppDelegate:
                 object: nil,
                 queue: .main
             ) { [weak self] _ in
-                self?.scheduleKeyboardRecovery(reason: name.rawValue)
+                guard let self, !self.exitRequested else { return }
+                self.keyboardRecovery.request(.wake)
             }
         }
     }
@@ -2738,6 +2756,8 @@ private final class AppDelegate:
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        keyboardDevices.stop()
+        keyboardRecovery.cancel()
         capsLock.stop()
     }
 
@@ -2746,55 +2766,6 @@ private final class AppDelegate:
     ) -> NSApplication.TerminateReply {
         requestExit(restart: false)
         return .terminateCancel
-    }
-
-    private func scheduleKeyboardRecovery(reason: String) {
-        keyboardRecoveryGeneration += 1
-        let generation = keyboardRecoveryGeneration
-        DiagnosticLog.write("Keyboard recovery scheduled reason=\(reason)")
-        runKeyboardRecovery(generation: generation, attempt: 0)
-    }
-
-    private func runKeyboardRecovery(generation: Int, attempt: Int) {
-        guard attempt < keyboardRecoveryDelays.count else { return }
-        let delay = keyboardRecoveryDelays[attempt]
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-            guard let self, generation == self.keyboardRecoveryGeneration else {
-                return
-            }
-
-            if attempt == 0 {
-                self.indicator.rebuildPanels()
-                self.keyboardReady = self.capsLock.recreate()
-            } else {
-                _ = self.capsLock.retryImmediateMapping()
-                if !self.capsLock.isListening {
-                    self.keyboardReady = self.capsLock.start()
-                }
-            }
-
-            if self.capsLock.immediateMappingActive {
-                DiagnosticLog.write(
-                    "Keyboard recovery succeeded attempt=\(attempt + 1)"
-                )
-                return
-            }
-
-            let nextAttempt = attempt + 1
-            if nextAttempt < self.keyboardRecoveryDelays.count {
-                DiagnosticLog.write(
-                    "Keyboard recovery retrying attempt=\(nextAttempt + 1)"
-                )
-                self.runKeyboardRecovery(
-                    generation: generation,
-                    attempt: nextAttempt
-                )
-            } else {
-                DiagnosticLog.write(
-                    "Keyboard recovery exhausted; Quartz fallback remains active"
-                )
-            }
-        }
     }
 
     private func setupStatusItem() {
@@ -3326,7 +3297,7 @@ private final class AppDelegate:
             permissionsTimer?.invalidate()
             permissionsTimer = nil
             if !capsLock.immediateMappingActive {
-                scheduleKeyboardRecovery(reason: "initial HID remap verification")
+                keyboardRecovery.request(.mappingUnavailable)
             }
         } else if permissionsTimer == nil {
             permissionsTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) {
@@ -3395,6 +3366,10 @@ private final class AppDelegate:
             return
         }
         exitRequested = true
+        keyboardDevices.stop()
+        keyboardRecovery.cancel()
+        permissionsTimer?.invalidate()
+        permissionsTimer = nil
         if state == .recording, let recorded = recorder.stop() {
             try? FileManager.default.removeItem(at: recorded.url)
             state = .idle
@@ -3427,6 +3402,7 @@ private final class AppDelegate:
                 )
                 _ = capsLock.retryImmediateMapping()
                 _ = capsLock.start()
+                keyboardDevices.start()
                 return
             }
         }
