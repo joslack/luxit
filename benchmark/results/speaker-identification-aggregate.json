@@ -1,5 +1,5 @@
 {
-  "status": "local experiment; not integrated into Luxit",
+  "status": "historical prototype measurements; provisional, not release accuracy measurements",
   "hardware": "Apple M3 Pro",
   "library": {
     "repository": "https://github.com/FluidInference/FluidAudio",

@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.13.0 — 2026-09-17
+
+- Estimate individual speakers in Parakeet recordings with a local, CPU-only
+  model. Preserve speaker state across chunks and recover pending analysis
+  after a restart. Labels are estimates within each recording and audio source.
+- Keep long, growing transcripts responsive, preserve words when speaker
+  attribution is uncertain, and reduce repeated playback text in the display.
+- Show conversation recording with a static menu-bar indicator. Keep the
+  listening cloud for Caps Lock dictation and dismiss the panel on outside clicks.
+- Support selecting and copying transcript text with keyboard shortcuts, and
+  clear the Copy button's confirmation after a short delay.
+- Add local post-transcription corrections for dictation and recordings, with
+  an editable Settings list, grouped regex patterns, captured replacements,
+  and a reloadable JSON file. See the [corrections guide](docs/corrections.md).
+
 ## 0.12.0 — 2026-09-16
 
 - Add a compact top-center panel with searchable local dictation and recording

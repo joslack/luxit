@@ -1,8 +1,8 @@
 # Local speaker-identification experiment
 
-Speaker labeling is experimental. The development branch now integrates the
-DIHARD III model with word timing, independent CPU analysis, and journal recovery;
-the published v0.12.0 release predates that integration. The measurements
+Speaker labeling is experimental. Luxit v0.13.0 integrates the DIHARD III model
+with word timing, independent CPU analysis, and journal recovery; v0.12.0 predates
+that integration. The historical prototype measurements
 below evaluate a candidate for labeling people within a recording; they do not
 demonstrate acoustic separation or cancellation of computer playback entering a
 microphone. The public artifact contains aggregate measurements only, with no
@@ -64,8 +64,9 @@ For each decoded chunk, extracted token text was verified against the backend's
 ordinary transcript, ignoring whitespace. Chunk-boundary overlap removal is a
 separate operation. This check protects against losing text while extracting
 timestamps; it does not measure recognition accuracy against a reference.
-The preview currently fragments sentences around uncertain words and needs a
-more readable presentation before integration.
+That prototype fragmented sentences around uncertain words. The integrated
+transcript instead uses a dotted underline for unassigned words while keeping
+known speaker labels readable across short gaps.
 
 ## Earlier stress checks
 
@@ -94,10 +95,11 @@ from separate source models cannot be merged by index. Playback echo needs
 separate evaluation with both sources, simultaneous local speech, and headphones.
 Transcript deduplication is only a presentation measure, not echo cancellation.
 
-Before enabling labels, validate additional natural conversations, improve
-uncertain-word presentation, and exercise the complete recorder under load.
-Model provisioning must be explicit and locally cached; failure of speaker
-analysis must leave ordinary dictation and recording usable.
+The integrated recorder has local regression and live-use checks for uncertain
+words, long transcripts, and recovery. Broader independently labeled natural
+conversations are still needed to establish release accuracy. Model provisioning
+is explicit and locally cached; speaker-analysis failure leaves ordinary
+dictation and recording usable.
 
 Pinned inputs, timing measurements, and aggregate counts are in
 [`speaker-identification-aggregate.json`](speaker-identification-aggregate.json).
