@@ -23,6 +23,13 @@ Mac. Never add telemetry or a network transcription path.
   Selecting a model must not silently download it.
 - Preserve the bundle identifier and persistent signing requirement so macOS
   privacy permissions survive upgrades.
+- `SpeakerAnalyzer.swift` runs the bundled, pinned speaker model on CPU only,
+  with persistent state per recording/source. Never use speaker confidence to
+  remove audio or transcript words. `SpeakerTranscript.swift` handles pure
+  word alignment; extraction failures fall back to the ordinary transcript.
+- Retain the recording journal while speaker analysis is pending so recovery
+  can rebuild identities. Remove it only after final text/labels are durable.
+  Speaker identities are local to each recording and capture source.
 
 ## Verification
 

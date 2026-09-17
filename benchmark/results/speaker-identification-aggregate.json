@@ -1,0 +1,81 @@
+{
+  "status": "historical prototype measurements; provisional, not release accuracy measurements",
+  "hardware": "Apple M3 Pro",
+  "library": {
+    "repository": "https://github.com/FluidInference/FluidAudio",
+    "version": "0.15.7",
+    "compute": "Core ML CPU only"
+  },
+  "model": {
+    "repository": "https://huggingface.co/FluidInference/ls-eend-coreml",
+    "revision": "28ce1b1f8ef186729df63b3886fbaae7bc10c4a1",
+    "chunk_milliseconds": 500
+  },
+  "audio": {
+    "corpus": "AMI Meeting Corpus",
+    "meeting": "ES2004a",
+    "file": "ES2004a.Mix-Headset.wav",
+    "license": "CC BY 4.0",
+    "repository": "https://huggingface.co/datasets/FluidInference/ami-corpus-mirror",
+    "revision": "722d8891643e1e4dc62cfd0d198fa05a1646c3cc",
+    "sha256": "3e2560b19bee6952c7c7ce041b0f1ea8a7ea9468044c4eea79d2a2c67e24ab0f"
+  },
+  "reference": {
+    "repository": "https://github.com/pyannote/AMI-diarization-setup",
+    "revision": "67c2d539286e89f68952d5dcf83912bd9f01dfae",
+    "setup": "only_words, test RTTM and UEM"
+  },
+  "measurements": [
+    {
+      "reference_speakers": 4,
+      "detected_speakers": 3,
+      "der_percent": 40.86070411400973,
+      "miss_percent": 30.918423702933627,
+      "false_alarm_percent": 3.3657126149247913,
+      "confusion_percent": 6.576567796151306,
+      "reference_speaker_seconds": 923.43,
+      "collar_seconds": 0,
+      "overlap_included": true,
+      "frame_seconds": 0.01,
+      "model_variant": "DIHARD III",
+      "audio_seconds": 1049.354687,
+      "processing_seconds": 7.362858057022095,
+      "chunk_p95_ms": 3.905057907104492,
+      "peak_rss_mb": 71.75,
+      "first_emission_audio_seconds": 16.5
+    },
+    {
+      "reference_speakers": 4,
+      "detected_speakers": 4,
+      "der_percent": 17.90715051492804,
+      "miss_percent": 11.883954387446801,
+      "false_alarm_percent": 3.6830079161387435,
+      "confusion_percent": 2.340188211342495,
+      "reference_speaker_seconds": 923.43,
+      "collar_seconds": 0,
+      "overlap_included": true,
+      "frame_seconds": 0.01,
+      "model_variant": "AMI",
+      "audio_seconds": 1049.354687,
+      "processing_seconds": 6.82305908203125,
+      "chunk_p95_ms": 3.7550926208496094,
+      "peak_rss_mb": 113.796875,
+      "first_emission_audio_seconds": 16.5
+    }
+  ],
+  "word_alignment_preview": {
+    "audio_seconds": 180,
+    "words": 576,
+    "unassigned_words": 72,
+    "detected_speakers": 4,
+    "transcript_preservation": "Extracted token text equals backend transcript in every decoded chunk, ignoring whitespace; normal time-based chunk-overlap removal is separate."
+  },
+  "limitations": [
+    "One meeting used to compare two variants, not an independent model-selection holdout.",
+    "Headset mix, not distant-microphone audio.",
+    "Accelerated processing, not real-time UI/energy measurements.",
+    "Custom 10 ms DER approximation with optimal one-to-one speaker mapping, zero collar and overlap included.",
+    "No WER measured; word-label coverage is not transcription accuracy.",
+    "Speaker recognition does not cancel playback leaking into a microphone."
+  ]
+}

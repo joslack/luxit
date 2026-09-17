@@ -20,8 +20,14 @@ final class LuxitSettingsModel: ObservableObject {
     @Published var selectedModelName = ""
     @Published var canSelectModel = true
     @Published var permissions = ""
+    @Published var speakerDetection = ""
     @Published var usage = ""
     @Published var performance = ""
+    @Published var corrections: [TextCorrection] = []
+    @Published var correctionsSummary = "Replace words after transcription"
+    @Published var correctionsError: String?
+    var onLoadCorrections: (() -> Void)?
+    var onSaveCorrections: (([TextCorrection]) -> String?)?
     var onSelectModel: ((String) -> Void)?
     var onPermissions: (() -> Void)?
     var onVocabulary: (() -> Void)?
@@ -54,6 +60,24 @@ final class TranscriptWindowModel: ObservableObject {
 
 private final class TranscriptHostingView: NSHostingView<TranscriptWindowView> {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        // Accessory apps have no standard Edit menu. Route field-editor
+        // shortcuts only when one of this panel's editable fields has focus.
+        if let editor = window?.firstResponder as? NSTextView, editor.isEditable,
+           event.type == .keyDown,
+           event.modifierFlags.intersection([.command, .control, .option, .shift]) == .command {
+            switch event.charactersIgnoringModifiers?.lowercased() {
+            case "a": editor.selectAll(nil); return true
+            case "c": editor.copy(nil); return true
+            case "x": editor.cut(nil); return true
+            case "v": editor.paste(nil); return true
+            case "z": editor.undoManager?.undo(); return true
+            default: break
+            }
+        }
+        return super.performKeyEquivalent(with: event)
+    }
 }
 
 private final class TranscriptPanel: NSPanel {
@@ -64,8 +88,12 @@ private final class TranscriptPanel: NSPanel {
 
 final class TranscriptWindowController: NSWindowController {
     private var animationGeneration = 0
+    private var isPresented = false
+    private var localClickMonitor: Any?
+    private var globalClickMonitor: Any?
+    private weak var toggleButton: NSButton?
 
-    init(model: TranscriptWindowModel) {
+    init(model: TranscriptWindowModel, toggleButton: NSButton? = nil) {
         let panel = TranscriptPanel(contentRect: NSRect(origin: .zero, size: TranscriptPanelLayout.size),
                                     styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.title = "Luxit Transcripts"
@@ -84,18 +112,26 @@ final class TranscriptWindowController: NSWindowController {
         hostingView.sizingOptions = []
         panel.contentView = hostingView
         super.init(window: panel)
+        self.toggleButton = toggleButton
         panel.onDismiss = { [weak self] in self?.dismiss() }
         model.onDismiss = { [weak self] in self?.dismiss() }
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
+    deinit {
+        if let localClickMonitor { NSEvent.removeMonitor(localClickMonitor) }
+        if let globalClickMonitor { NSEvent.removeMonitor(globalClickMonitor) }
+    }
+
     func present() {
         guard let window else { return }
-        animationGeneration += 1
-        if window.isVisible, window.alphaValue > 0.99 { window.makeKeyAndOrderFront(nil); return }
+        if isPresented { window.makeKeyAndOrderFront(nil); return }
         let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main
         guard let screen else { return }
+        isPresented = true
+        animationGeneration += 1
+        monitorOutsideClicks()
         let frame = TranscriptPanelLayout.frame(in: screen.visibleFrame)
         let reducedMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         window.setFrame(frame.offsetBy(dx: 0, dy: reducedMotion ? 0 : 22), display: false)
@@ -110,7 +146,9 @@ final class TranscriptWindowController: NSWindowController {
     }
 
     func dismiss() {
-        guard let window, window.isVisible else { return }
+        stopMonitoringOutsideClicks()
+        guard isPresented, let window else { return }
+        isPresented = false
         animationGeneration += 1
         let generation = animationGeneration
         NSAnimationContext.runAnimationGroup { context in
@@ -127,7 +165,37 @@ final class TranscriptWindowController: NSWindowController {
     }
 
     func toggle() {
-        if window?.isVisible == true, window?.alphaValue == 1 { dismiss() } else { present() }
+        if isPresented { dismiss() } else { present() }
+    }
+
+    private func monitorOutsideClicks() {
+        let clicks: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        localClickMonitor = NSEvent.addLocalMonitorForEvents(matching: clicks) { [weak self] event in
+            guard let self else { return event }
+            // The status button owns its mouse-up toggle. Dismissing on its
+            // mouse-down would make that same click reopen the panel.
+            if let button = self.toggleButton, event.window === button.window,
+               button.bounds.contains(button.convert(event.locationInWindow, from: nil)) {
+                return event
+            }
+            var target = event.window
+            while let candidate = target {
+                if candidate === self.window { return event }
+                target = candidate.parent ?? candidate.sheetParent
+            }
+            self.dismiss()
+            return event
+        }
+        globalClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: clicks) { [weak self] _ in
+            self?.dismiss()
+        }
+    }
+
+    private func stopMonitoringOutsideClicks() {
+        if let localClickMonitor { NSEvent.removeMonitor(localClickMonitor) }
+        if let globalClickMonitor { NSEvent.removeMonitor(globalClickMonitor) }
+        localClickMonitor = nil
+        globalClickMonitor = nil
     }
 }
 
@@ -135,7 +203,6 @@ struct TranscriptWindowView: View {
     @ObservedObject var model: TranscriptWindowModel
     private var tab: Int { get { model.selectedTab } nonmutating set { model.selectedTab = newValue } }
     @State private var query = ""
-    @State private var copied = false
     @State private var confirmingDelete = false
 
     private var selection: TranscriptEntry? {
@@ -205,16 +272,17 @@ struct TranscriptWindowView: View {
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                         Spacer()
-                        Button(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc") {
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(entry.displayText, forType: .string)
-                            copied = true
-                        }
+                        TranscriptCopyButton(entry: entry).id(entry.id)
                         if entry.recordingState == .failed {
                             Button("Retry", systemImage: "arrow.clockwise") { model.onRetry?(entry.id) }
                         }
                         Button("Delete", systemImage: "trash", role: .destructive) { confirmingDelete = true }
                             .labelStyle(.iconOnly).disabled(entry.recordingState?.inProgress == true || entry.id == model.activeRecordingID)
+                    }
+                    if let status = entry.speakerStatus {
+                        Label(status, systemImage: "person.2.wave.2")
+                            .font(.caption).foregroundStyle(.secondary)
+                            .help("Speaker labels are estimates within this recording and audio source. Dotted text has no assigned speaker; a pause does not mean a new person is speaking.")
                     }
                     TranscriptTextView(entry: entry, paused: model.paused).id(entry.id)
                 }.padding(.horizontal, 18).padding(.bottom, 12)
@@ -240,7 +308,6 @@ struct TranscriptWindowView: View {
         .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous)
             .strokeBorder(.white.opacity(0.12), lineWidth: 1).allowsHitTesting(false))
         .preferredColorScheme(.dark)
-        .onChange(of: model.selectedID) { _, _ in copied = false }
         .confirmationDialog("Delete this transcript from this Mac?", isPresented: $confirmingDelete) {
             Button("Delete transcript", role: .destructive) {
                 if let id = model.selectedID { model.onDelete?(id) }
@@ -304,14 +371,33 @@ struct TranscriptWindowView: View {
     }
 }
 
-/// Only this small header observes meter ticks; search, history, and transcript
-/// layout do not participate in audio-driven updates.
+private struct TranscriptCopyButton: View {
+    let entry: TranscriptEntry
+    @State private var confirmationID: UUID?
+
+    var body: some View {
+        Button(confirmationID == nil ? "Copy" : "Copied",
+               systemImage: confirmationID == nil ? "doc.on.doc" : "checkmark") {
+            NSPasteboard.general.clearContents()
+            confirmationID = NSPasteboard.general.setString(entry.displayText, forType: .string) ? UUID() : nil
+        }
+        .task(id: confirmationID) {
+            guard let confirmation = confirmationID else { return }
+            do { try await Task.sleep(for: .seconds(1.5)) }
+            catch { return }
+            // A second copy starts a fresh confirmation interval. A cancelled
+            // task must never clear that newer confirmation or another entry's.
+            if confirmationID == confirmation { confirmationID = nil }
+        }
+        .onDisappear { confirmationID = nil }
+    }
+}
+
 private struct TranscriptTextView: View {
     let entry: TranscriptEntry
     let paused: Bool
     @State private var following: Bool
-    @State private var userScrolling = false
-    private let bottomID = "transcript-bottom"
+    @State private var followRevision = 0
 
     init(entry: TranscriptEntry, paused: Bool) {
         self.entry = entry
@@ -320,62 +406,36 @@ private struct TranscriptTextView: View {
     }
 
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 16) {
-                    if let segments = entry.displaySegments {
-                        ForEach(segments) { segment in
-                            VStack(alignment: .leading, spacing: 5) {
-                                Text("\(TranscriptSegment.timestamp(segment.start)) · \(segment.sourceTitle)")
-                                    .font(.caption).foregroundStyle(.secondary)
-                                Text(segment.text).font(.system(size: 15)).lineSpacing(5).textSelection(.enabled)
-                            }.frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        if entry.recordingState?.inProgress == true {
-                            Text(paused ? "Recording paused." : (entry.recordingState == .recording
-                                 ? "Listening… New paragraphs appear at pauses." : "Finishing the remaining audio…"))
-                                .font(.callout).foregroundStyle(.secondary)
-                        } else if segments.isEmpty {
-                            Text(entry.recordingState == .failed ? "Audio is saved. Retry to finish the transcript." : "No speech detected.")
-                                .foregroundStyle(.secondary)
-                        }
-                    } else {
-                        Text(entry.text).font(.system(size: 15)).lineSpacing(5).textSelection(.enabled)
-                    }
-                    Color.clear.frame(height: 1).id(bottomID)
-                }.frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .onScrollGeometryChange(for: Bool.self) { geometry in
-                geometry.contentSize.height - geometry.visibleRect.maxY < 48
-            } action: { _, atBottom in
-                if userScrolling { following = atBottom }
-            }
-            .onScrollPhaseChange { _, phase, context in
-                let manual = phase == .tracking || phase == .interacting || phase == .decelerating
-                if userScrolling && phase == .idle {
-                    following = context.geometry.contentSize.height - context.geometry.visibleRect.maxY < 48
-                }
-                userScrolling = manual
-            }
-            .task(id: entry.displayText) {
-                guard following else { return }
-                // Allow the newly appended paragraph to lay out before moving.
-                await Task.yield()
-                guard !Task.isCancelled, following else { return }
-                withAnimation(.easeOut(duration: 0.18)) { proxy.scrollTo(bottomID, anchor: .bottom) }
-            }
+        NativeTranscriptText(entry: entry, paused: paused, followRevision: followRevision) { following = $0 }
             .overlay(alignment: .bottomTrailing) {
                 if !following && entry.recordingState?.inProgress == true {
                     Button("Latest", systemImage: "arrow.down") {
                         following = true
-                        withAnimation(.easeOut(duration: 0.18)) { proxy.scrollTo(bottomID, anchor: .bottom) }
+                        followRevision += 1
                     }.buttonStyle(.borderedProminent).controlSize(.small).padding(6)
                 }
             }
-        }
     }
 }
 
+private struct NativeTranscriptText: NSViewRepresentable {
+    let entry: TranscriptEntry
+    let paused: Bool
+    let followRevision: Int
+    let onFollowingChanged: (Bool) -> Void
+
+    func makeNSView(context: Context) -> TranscriptScrollView { TranscriptScrollView(frame: .zero) }
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: TranscriptScrollView, context: Context) -> CGSize? {
+        CGSize(width: proposal.width ?? 520, height: proposal.height ?? 160)
+    }
+    func updateNSView(_ view: TranscriptScrollView, context: Context) {
+        view.onFollowingChanged = onFollowingChanged
+        view.update(TranscriptContent.make(entry: entry, paused: paused),
+                    initiallyFollowing: entry.recordingState?.inProgress == true, followRevision: followRevision)
+    }
+}
+
+/// Only this small header observes meter ticks; transcript layout does not.
 private struct RecordingMeterView: View {
     @ObservedObject var meter: RecordingMeterModel
     let recording: Bool
@@ -411,45 +471,56 @@ private struct RecordingMeterView: View {
 private struct LuxitSettingsView: View {
     @ObservedObject var model: LuxitSettingsModel
     @State private var choosingModel = false
+    @State private var editingCorrections = false
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 8) {
-                VStack(spacing: 0) {
-                    Button { choosingModel.toggle() } label: {
-                        row("Transcription model", detail: model.selectedModelName,
-                            icon: "waveform", accessory: choosingModel ? "chevron.up" : "chevron.down")
-                    }.buttonStyle(.plain)
-                    if choosingModel {
-                        ForEach(model.models) { option in
-                            Button { model.onSelectModel?(option.id) } label: {
-                                HStack(spacing: 10) {
-                                    Image(systemName: model.selectedModelID == option.id ? "checkmark.circle.fill" : "circle")
-                                        .foregroundStyle(model.selectedModelID == option.id ? Color.cyan : .secondary)
-                                    VStack(alignment: .leading, spacing: 3) {
-                                        Text(option.title).font(.system(size: 12, weight: .medium))
-                                        Text(option.detail).font(.caption).foregroundStyle(.secondary)
-                                    }
-                                    Spacer(minLength: 0)
-                                }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
-                                    .contentShape(Rectangle())
-                            }.buttonStyle(.plain).disabled(!model.canSelectModel || !option.available)
+        if editingCorrections {
+            CorrectionsEditor(model: model) { editingCorrections = false }
+        } else {
+            ScrollView {
+                VStack(spacing: 8) {
+                    VStack(spacing: 0) {
+                        Button { choosingModel.toggle() } label: {
+                            row("Transcription model", detail: model.selectedModelName,
+                                icon: "waveform", accessory: choosingModel ? "chevron.up" : "chevron.down")
+                        }.buttonStyle(.plain)
+                        if choosingModel {
+                            ForEach(model.models) { option in
+                                Button { model.onSelectModel?(option.id) } label: {
+                                    HStack(spacing: 10) {
+                                        Image(systemName: model.selectedModelID == option.id ? "checkmark.circle.fill" : "circle")
+                                            .foregroundStyle(model.selectedModelID == option.id ? Color.cyan : .secondary)
+                                        VStack(alignment: .leading, spacing: 3) {
+                                            Text(option.title).font(.system(size: 12, weight: .medium))
+                                            Text(option.detail).font(.caption).foregroundStyle(.secondary)
+                                        }
+                                        Spacer(minLength: 0)
+                                    }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
+                                        .contentShape(Rectangle())
+                                }.buttonStyle(.plain).disabled(!model.canSelectModel || !option.available)
+                            }
                         }
+                    }.background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 12))
+                    row("Speaker detection", detail: model.speakerDetection, icon: "person.2.wave.2", accessory: nil)
+                        .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 12))
+                    action("Permissions", detail: model.permissions, icon: "lock.shield", perform: model.onPermissions)
+                    action("Corrections", detail: model.correctionsSummary, icon: "text.badge.checkmark") {
+                        model.onLoadCorrections?()
+                        editingCorrections = true
                     }
-                }.background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 12))
-                action("Permissions", detail: model.permissions, icon: "lock.shield", perform: model.onPermissions)
-                action("Vocabulary", detail: "Names and words you use", icon: "text.book.closed", perform: model.onVocabulary)
-                row("Usage", detail: model.usage + "\n" + model.performance, icon: "chart.bar", accessory: nil)
-                    .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 12))
-                action("Show Luxit in Applications", icon: "folder", perform: model.onReveal)
-                HStack(spacing: 10) {
-                    Text("Luxit " + (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""))
-                        .font(.caption).foregroundStyle(.secondary)
-                    Spacer()
-                    Button("Restart") { model.onRestart?() }
-                    Button("Quit") { model.onQuit?() }
-                }.buttonStyle(.bordered).padding(.vertical, 6)
-            }.padding(.horizontal, 16).padding(.bottom, 12)
+                    action("Vocabulary", detail: "Word hints for Whisper models", icon: "text.book.closed", perform: model.onVocabulary)
+                    row("Usage", detail: model.usage + "\n" + model.performance, icon: "chart.bar", accessory: nil)
+                        .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 12))
+                    action("Show Luxit in Applications", icon: "folder", perform: model.onReveal)
+                    HStack(spacing: 10) {
+                        Text("Luxit " + (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""))
+                            .font(.caption).foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Restart") { model.onRestart?() }
+                        Button("Quit") { model.onQuit?() }
+                    }.buttonStyle(.bordered).padding(.vertical, 6)
+                }.padding(.horizontal, 16).padding(.bottom, 12)
+            }
         }
     }
 
@@ -468,5 +539,78 @@ private struct LuxitSettingsView: View {
     private func action(_ title: String, detail: String? = nil, icon: String, perform: (() -> Void)?) -> some View {
         Button { perform?() } label: { row(title, detail: detail, icon: icon) }
             .buttonStyle(.plain).background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 12))
+    }
+}
+
+private struct CorrectionsEditor: View {
+    @ObservedObject var model: LuxitSettingsModel
+    let close: () -> Void
+    @State private var draft: [TextCorrection]
+    @State private var error: String?
+
+    init(model: LuxitSettingsModel, close: @escaping () -> Void) {
+        self.model = model
+        self.close = close
+        _draft = State(initialValue: model.corrections)
+        _error = State(initialValue: model.correctionsError)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Corrections").font(.headline)
+                Spacer()
+                Button("Cancel", action: close)
+                Button("Save") {
+                    guard let save = model.onSaveCorrections else { return }
+                    error = save(draft)
+                    if error == nil { close() }
+                }.keyboardShortcut("s", modifiers: .command)
+            }
+            Text("Replace whole words or phrases after transcription, ignoring case. Applied in order to new dictations and recording paragraphs.")
+                .font(.caption).foregroundStyle(.secondary)
+            if let error { Text(error).font(.caption).foregroundStyle(.orange) }
+            ScrollView {
+                VStack(spacing: 10) {
+                    if draft.isEmpty {
+                        Text("Add a name or phrase Luxit often gets wrong.")
+                            .font(.system(size: 13)).foregroundStyle(.secondary).padding(.vertical, 20)
+                    }
+                    ForEach($draft) { $rule in
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack(alignment: .bottom, spacing: 8) {
+                                VStack(alignment: .leading, spacing: 5) {
+                                    Text(rule.isPattern ? "Pattern" : "Replace").font(.caption).foregroundStyle(.secondary)
+                                    TextField(rule.isPattern ? "e.g. Luke\\s+(sit|set)" : "e.g. Luke sit", text: $rule.from)
+                                        .accessibilityLabel("Phrase to replace")
+                                }
+                                Image(systemName: "arrow.right").foregroundStyle(.secondary).padding(.bottom, 5)
+                                VStack(alignment: .leading, spacing: 5) {
+                                    Text("With").font(.caption).foregroundStyle(.secondary)
+                                    TextField("e.g. Luxit", text: $rule.to)
+                                        .accessibilityLabel("Replacement phrase")
+                                }
+                                Button {
+                                    draft.removeAll { $0.id == rule.id }
+                                } label: { Image(systemName: "minus.circle") }
+                                    .buttonStyle(.plain).help("Remove replacement").padding(.bottom, 5)
+                            }.textFieldStyle(.roundedBorder)
+                            Toggle("Pattern", isOn: $rule.isPattern).toggleStyle(.checkbox).font(.caption)
+                                .help("Regular expression: use | for alternatives and $1, $2 in the replacement for captured groups.")
+                            if rule.isPattern {
+                                Text("Use | for alternatives, ( ) for groups, and $1 in the replacement to keep a group.")
+                                    .font(.caption2).foregroundStyle(.secondary)
+                            }
+                        }.padding(12)
+                            .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 12))
+                    }
+                    Button("Add replacement", systemImage: "plus") {
+                        draft.append(TextCorrection(from: "", to: ""))
+                    }.frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            Text("Saved only on this Mac. Existing transcripts stay unchanged.")
+                .font(.caption).foregroundStyle(.secondary)
+        }.padding(.horizontal, 16).padding(.bottom, 12)
     }
 }

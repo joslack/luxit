@@ -40,8 +40,9 @@ automatically when you log in. If Caps Lock does nothing, open
 **Permissions** from the menu-bar menu and enable any missing access in System
 Settings.
 
-On first install, Luxit downloads the recommended Parakeet Metal and voice
-activity models. Other model choices are not downloaded automatically.
+On first install, Luxit downloads the recommended Parakeet Metal, voice
+activity, and speaker models. The speaker model adds about 44 MB to the app.
+Other transcription model choices are not downloaded automatically.
 
 ## Use
 
@@ -56,22 +57,47 @@ Click Luxit's menu-bar icon to open the panel at the top center of your screen.
 **History** keeps your dictations and recordings locally: search, open, copy,
 or delete a transcript. History begins with this version; older dictations
 cannot be recovered.
+Select text in an open transcript and press **⌘C** to copy it. **⌘A** selects
+the entire transcript; the **Copy** button also copies the whole transcript.
+
+Use **Settings → Corrections** to replace recurring mistakes after transcription,
+including with the default Parakeet model. Add the phrase Luxit hears and what
+you want instead, then **Save**. Turn on **Pattern** to group variants in one
+rule: `Luke\s+(sit|set)` → `Luxit`. Patterns support captured groups such as
+`$1` in the replacement. Rules match whole words or phrases, ignore case, and
+run in their listed order. They apply to new dictations and recording paragraphs
+before saving or pasting; existing transcripts stay unchanged. Your rules stay
+on this Mac. **Vocabulary** supplies recognition hints for Whisper models only.
+For JSON configuration, scripts, and pattern examples, see the
+[corrections guide](docs/corrections.md).
 
 Choose **Record** to capture your microphone and computer audio together, such
 as a call or video. The transcript grows in timestamped paragraphs at natural
 pauses, with separate **Microphone** and **Computer** labels. Pause, resume,
 and stop from the top bar. These recordings do not paste into another app.
+The menu-bar icon shows a steady red dot while recording, with no floating cloud
+or recording label. Pausing changes the icon to a pause symbol.
 macOS may ask for **Screen & System Audio Recording** access. Luxit receives
-only audio; it does not save screen images or video. Headphones help keep
-computer playback from also entering your microphone.
+only audio; it does not save screen images or video. macOS shows **Currently
+Sharing** while this capture session is open, including while paused. **Stop**
+ends the capture session. Ordinary Caps Lock dictation uses only the microphone.
+Headphones help keep computer playback from also entering your microphone.
 
-Recording audio is saved locally in small chunks until its transcript is
-safely saved, then removed. Interrupted recordings recover when Luxit reopens;
-failed chunks have a **Retry** button. Source labels do not identify individual
-speakers. Transcript history stays in
+Recordings made with Parakeet also estimate **Speaker 1**, **Speaker 2**, and so
+on within each audio source. Labels appear as analysis catches up; a dotted
+underline marks words with no assigned speaker, not a change of speaker.
+Detection supports up to ten voices per source and can make
+mistakes, especially with quiet or overlapping speech. These numbers reset for
+each recording and do not identify people by name. Whisper recordings retain
+source labels without individual speaker labels.
+
+Recording audio stays locally in small chunks until the transcript and speaker
+analysis are safely saved, then is removed. Interrupted recordings recover when
+Luxit reopens; failed chunks have a **Retry** button. Speaker-analysis failure
+keeps the transcript usable. Transcript history stays in
 `~/Library/Application Support/EdgeWhisper/History/` until you delete it.
 Use the gear button or right-click the menu-bar icon for models, permissions,
-and other controls. Press **Escape** or the up arrow to dismiss the panel;
+and other controls. Click outside, press **Escape**, or use the up arrow to dismiss the panel;
 recording and transcription continue while it is hidden. Keep Luxit running
 and your Mac awake until you stop recording.
 

@@ -50,6 +50,33 @@ enum TranscriptHistoryTests {
         let agreement = TranscriptSegment(id: UUID(), start: 2.1, source: .microphone, text: "Yes", duration: 1)
         expect(TranscriptSegment.coalescingSources([yes, agreement]).count == 2,
                "Short individual answers aren't treated as playback duplicates")
+        let longPlayback = TranscriptSegment(id: UUID(), start: 10, source: .computer,
+            text: "First open the settings. Then select the microphone. Finally start the recording.", duration: 9)
+        let middleEcho = TranscriptSegment(id: UUID(), start: 13.2, source: .microphone,
+            text: "Then select the microphone.", duration: 2.8)
+        expect(TranscriptSegment.coalescingSources([longPlayback, middleEcho]).count == 1,
+               "A shorter microphone echo inside a longer playback paragraph appears once")
+        let playbackA = TranscriptSegment(id: UUID(), start: 20, source: .computer,
+            text: "Please open the settings.", duration: 2)
+        let playbackB = TranscriptSegment(id: UUID(), start: 22.2, source: .computer,
+            text: "Then select the microphone.", duration: 2)
+        let joinedEcho = TranscriptSegment(id: UUID(), start: 20.3, source: .microphone,
+            text: "Please open the settings, then select the microphone!", duration: 4)
+        let splitMerged = TranscriptSegment.coalescingSources([playbackB, joinedEcho, playbackA])
+        expect(splitMerged.count == 2 && splitMerged.allSatisfy { $0.additionalSource == .microphone },
+               "One microphone paragraph can match consecutive computer chunks even out of order")
+        let interruption = TranscriptSegment(id: UUID(), start: 13.2, source: .microphone,
+            text: "Then select the microphone. Wait, use the other one.", duration: 3)
+        expect(TranscriptSegment.coalescingSources([longPlayback, interruption]).count == 2,
+               "Speech over playback is kept in full when it contains additional words")
+        let correction = TranscriptSegment(id: UUID(), start: 13.2, source: .microphone,
+            text: "Then select the speakers.", duration: 2.8)
+        expect(TranscriptSegment.coalescingSources([longPlayback, correction]).count == 2,
+               "Similar words with a different meaning must never be fuzzy-deduplicated")
+        let lateRepeat = TranscriptSegment(id: UUID(), start: 18.8, source: .microphone,
+            text: middleEcho.text, duration: 3)
+        expect(TranscriptSegment.coalescingSources([longPlayback, lateRepeat]).count == 2,
+               "A later repetition with only a small time overlap remains visible")
         let legacySegments = "[{\"id\":\"00000000-0000-0000-0000-000000000002\",\"start\":0,\"source\":\"microphone\",\"text\":\"Older paragraph\"}]"
         entry.segments = try JSONDecoder().decode([TranscriptSegment].self, from: Data(legacySegments.utf8))
         expect(entry.displaySegments?.first?.text == "Older paragraph", "Older paragraphs without duration remain readable")

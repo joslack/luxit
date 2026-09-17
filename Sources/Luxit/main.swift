@@ -1804,7 +1804,7 @@ private protocol TranscriptionBackend {
         wavURL: URL,
         vadModelURL: URL,
         prompt: String,
-        completion: @escaping (Result<String, Error>) -> Void
+        completion: @escaping (Result<TranscriptionResult, Error>) -> Void
     )
 }
 
@@ -1915,7 +1915,7 @@ private final class WhisperCppEngine: TranscriptionBackend {
         wavURL: URL,
         vadModelURL: URL,
         prompt: String,
-        completion: @escaping (Result<String, Error>) -> Void
+        completion: @escaping (Result<TranscriptionResult, Error>) -> Void
     ) {
         queue.async {
             self.unloadWorkItem?.cancel()
@@ -1957,7 +1957,7 @@ private final class WhisperCppEngine: TranscriptionBackend {
 
             let transcript = String(cString: pointer)
             ew_whisper_string_free(pointer)
-            DispatchQueue.main.async { completion(.success(transcript)) }
+            DispatchQueue.main.async { completion(.success(TranscriptionResult(text: transcript))) }
         }
     }
 }
@@ -2062,7 +2062,7 @@ private final class ParakeetEngine: TranscriptionBackend {
         wavURL: URL,
         vadModelURL: URL,
         prompt: String,
-        completion: @escaping (Result<String, Error>) -> Void
+        completion: @escaping (Result<TranscriptionResult, Error>) -> Void
     ) {
         _ = prompt
         queue.async {
@@ -2103,7 +2103,9 @@ private final class ParakeetEngine: TranscriptionBackend {
 
             let transcript = String(cString: pointer)
             ew_whisper_string_free(pointer)
-            DispatchQueue.main.async { completion(.success(transcript)) }
+            let result = TranscriptionResult(text: transcript,
+                words: ParakeetWordTiming.read(context: context, text: transcript))
+            DispatchQueue.main.async { completion(.success(result)) }
         }
     }
 }
@@ -2241,7 +2243,7 @@ private final class TranscriptionEngine {
         wavURL: URL,
         vadModelURL: URL,
         prompt: String,
-        completion: @escaping (Result<String, Error>) -> Void
+        completion: @escaping (Result<TranscriptionResult, Error>) -> Void
     ) {
         queue.async {
             self.pressureEligibleAt = nil
@@ -2624,17 +2626,18 @@ private final class AppDelegate:
 {
     private let recorder = AudioRecorder()
     private let transcriptionEngine = TranscriptionEngine()
+    private let speakerAnalyzer = SpeakerAnalyzer()
+    private var speakerAnalysisInFlight = false
+    private var speakerRevisions: [UUID: String] = [:]
     private let capsLock = GlobalCapsLock()
     private let indicator = EdgeIndicator()
     private let statistics = StatisticsStore()
     private let history = TranscriptHistory(url: FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Application Support/EdgeWhisper/History/transcripts.json"))
     private let transcriptModel = TranscriptWindowModel()
+    private lazy var corrections = TranscriptCorrections(url: supportDirectory.appendingPathComponent("corrections.json"))
     private var transcriptWindow: TranscriptWindowController?
     private let computerRecorder = ComputerAudioRecorder()
-    private let computerVoiceAnalyzer = VoiceActivityAnalyzer()
-    private let microphoneVoiceAnalyzer = VoiceActivityAnalyzer()
-    private let combinedVoiceLevels = CombinedVoiceLevels()
     private var computerTransition = false
     private var recordingSessions: [UUID: RecordingSession] = [:]
     private var activeRecordingSession: RecordingSession?
@@ -2653,6 +2656,7 @@ private final class AppDelegate:
     private var nextJobID = 1
     private let maximumPendingTranscriptions = 3
     private var statusItem: NSStatusItem!
+    private var recordingPresence: RecordingPresenceController?
     private var permissionsTimer: Timer?
     private var statusText = "Ready — model loads when recording starts"
     private var keyboardReady = false
@@ -2809,6 +2813,8 @@ private final class AppDelegate:
             button.action = #selector(toggleTranscriptPanel)
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         }
+        recordingPresence = RecordingPresenceController(item: statusItem)
+        recordingPresence?.update(.idle, defaultSymbol: "mic.circle.fill", detail: "Ready — Caps Lock to dictate")
 
         refreshSettings()
     }
@@ -2826,6 +2832,15 @@ private final class AppDelegate:
         }
         settings.onPermissions = { [weak self] in self?.openPermissions() }
         settings.onVocabulary = { [weak self] in self?.openPrompt() }
+        settings.onLoadCorrections = { [weak self] in self?.refreshCorrections() }
+        settings.onSaveCorrections = { [weak self] replacements in
+            guard let self else { return "Luxit is closing. Try again after reopening it." }
+            do {
+                try self.corrections.save(replacements)
+                self.refreshCorrections()
+                return nil
+            } catch { return error.localizedDescription }
+        }
         settings.onReveal = { [weak self] in self?.showInApplications() }
         settings.onRestart = { [weak self] in self?.requestExit(restart: true) }
         settings.onQuit = { [weak self] in self?.requestExit(restart: false) }
@@ -2838,6 +2853,7 @@ private final class AppDelegate:
             do {
                 if self.activeRecordingSession !== session { try session.finish(duration: session.snapshot.duration) }
                 self.failedRecordingSessions.remove(id)
+                self.speakerRevisions.removeValue(forKey: id)
                 self.transcriptModel.error = nil
                 try self.saveRecordingSession(session)
                 self.pumpRecordingChunks()
@@ -2860,6 +2876,8 @@ private final class AppDelegate:
                     try FileManager.default.removeItem(at: session.directory)
                     self.recordingSessions.removeValue(forKey: id)
                     self.failedRecordingSessions.remove(id)
+                    self.speakerRevisions.removeValue(forKey: id)
+                    self.speakerAnalyzer.release(sessionID: id)
                 }
                 try self.history.delete(id: id)
                 self.transcriptModel.entries = self.history.entries
@@ -2872,11 +2890,6 @@ private final class AppDelegate:
             self?.computerLevelMailbox.store(level: level)
 
         }
-        computerRecorder.onAudio = { [weak self] type, samples, count, rate in
-            guard let self else { return }
-            let analyzer = type == .microphone ? self.microphoneVoiceAnalyzer : self.computerVoiceAnalyzer
-            analyzer.submit(samples: samples, count: count, sampleRate: rate)
-        }
         computerRecorder.onFailure = { [weak self] error in
             guard let self, self.state == .computerRecording else { return }
             self.transcriptModel.error = "Recording interrupted: \(error.localizedDescription)"
@@ -2885,7 +2898,7 @@ private final class AppDelegate:
     }
 
     @objc private func openTranscriptHistory() {
-        if transcriptWindow == nil { transcriptWindow = TranscriptWindowController(model: transcriptModel) }
+        if transcriptWindow == nil { transcriptWindow = TranscriptWindowController(model: transcriptModel, toggleButton: statusItem.button) }
         transcriptWindow?.present()
     }
 
@@ -2926,10 +2939,58 @@ private final class AppDelegate:
             // History is durable before the audio journal is removed.
             if FileManager.default.fileExists(atPath: session.directory.path) { try FileManager.default.removeItem(at: session.directory) }
             recordingSessions.removeValue(forKey: snapshot.id)
+            speakerRevisions.removeValue(forKey: snapshot.id)
+            speakerAnalyzer.release(sessionID: snapshot.id)
+        }
+    }
+
+    private func pumpSpeakerAnalysis() {
+        guard !exitRequested, !speakerAnalysisInFlight else { return }
+        let candidates = recordingSessions.values.sorted { $0.snapshot.createdAt < $1.snapshot.createdAt }
+        guard let session = candidates.first(where: {
+            let snapshot = $0.snapshot
+            return snapshot.speakerState == .pending &&
+                speakerRevisions[snapshot.id] != "\(snapshot.chunks.filter(\.sealed).count):\(snapshot.stopped)"
+        }) else { return }
+        let snapshot = session.snapshot
+        speakerRevisions[snapshot.id] = "\(snapshot.chunks.filter(\.sealed).count):\(snapshot.stopped)"
+        speakerAnalysisInFlight = true
+        speakerAnalyzer.analyze(snapshot: snapshot, directory: session.directory) { [weak self] result in
+            guard let self else { return }
+            self.speakerAnalysisInFlight = false
+            guard self.recordingSessions[snapshot.id] === session else {
+                self.pumpSpeakerAnalysis()
+                return
+            }
+            do {
+                switch result {
+                case .success(let turns):
+                    let state: SpeakerAnalysisState = snapshot.stopped ? .complete : .pending
+                    if session.snapshot.speakerTurns != turns || session.snapshot.speakerState != state {
+                        try session.updateSpeakers(turns: turns, state: state)
+                        try self.saveRecordingSession(session)
+                    }
+                    DiagnosticLog.write("Speaker analysis updated chunks=\(snapshot.chunks.filter(\.sealed).count) turns=\(turns.count) final=\(snapshot.stopped)")
+                case .failure(let error):
+                    // Speaker failure never fails transcription or removes text.
+                    try session.updateSpeakers(turns: [], state: .unavailable)
+                    self.speakerAnalyzer.release(sessionID: snapshot.id)
+                    DiagnosticLog.write("Speaker analysis unavailable: \(error.localizedDescription)")
+                    try self.saveRecordingSession(session)
+                }
+            } catch {
+                // Keep Retry reachable even if final labels could not be saved.
+                self.failedRecordingSessions.insert(snapshot.id)
+                try? self.saveRecordingSession(session)
+                self.transcriptModel.error = "Could not save speaker labels. The recording is still saved locally; use Retry."
+            }
+            self.pumpSpeakerAnalysis()
+            self.refreshActivityUI()
         }
     }
 
     private func pumpRecordingChunks() {
+        pumpSpeakerAnalysis()
         guard !exitRequested, !sessionChunkInFlight, pendingTranscriptions == 0, state != .recording,
               pendingModelActivation == nil, let modelURL = selectedModelURL else { return }
         let candidates = recordingSessions.values.filter { !failedRecordingSessions.contains($0.snapshot.id) }
@@ -2941,13 +3002,14 @@ private final class AppDelegate:
         refreshActivityUI()
         let profile = selectedModel
         let started = Date()
-        let finish: (Result<String, Error>) -> Void = { [weak self] result in
+        let finish: (Result<TranscriptionResult, Error>) -> Void = { [weak self] result in
             guard let self else { return }
             self.sessionChunkInFlight = false
             self.pendingTranscriptions = max(0, self.pendingTranscriptions - 1)
             do {
-                let text = try result.get().trimmingCharacters(in: .whitespacesAndNewlines)
-                try session.complete(chunkID: chunk.id, text: text)
+                let decoded = self.correctedTranscription(try result.get())
+                let text = decoded.text
+                try session.complete(chunkID: chunk.id, text: text, words: decoded.words)
                 try self.saveRecordingSession(session)
                 session.removeCompletedAudio(chunk: chunk)
                 if !text.isEmpty {
@@ -2984,7 +3046,8 @@ private final class AppDelegate:
         }
         let session: RecordingSession
         do {
-            session = try RecordingSession(root: recordingSessionsRoot)
+            session = try RecordingSession(root: recordingSessionsRoot,
+                detectSpeakers: selectedModel.usesParakeetEngine && SpeakerAnalyzer.modelURL != nil)
             recordingSessions[session.snapshot.id] = session
             try saveRecordingSession(session)
         } catch { transcriptModel.error = "Could not save recording: \(error.localizedDescription)"; return }
@@ -2992,8 +3055,8 @@ private final class AppDelegate:
         transcriptModel.activeRecordingID = session.snapshot.id
         transcriptModel.selectedID = session.snapshot.id
         transcriptModel.selectedTab = 1
-        // These processors consume every source buffer for segmentation. The
-        // independent animation analyzers may discard stale visualization work.
+        // These processors consume every source buffer for segmentation.
+        // Conversation recording has no cloud or separate animation analysis.
         let detectors = [VoiceActivityProcessor(modelURL: VoiceActivityAnalyzer.modelURL),
                          VoiceActivityProcessor(modelURL: VoiceActivityAnalyzer.modelURL)]
         computerRecorder.classifySpeech = { type, samples, count in
@@ -3006,17 +3069,9 @@ private final class AppDelegate:
         transcriptModel.error = nil
         transcriptModel.meter.elapsed = 0
         transcriptModel.paused = false
+        indicator.hide()
         setStatus("Starting computer + microphone recording…", symbol: "record.circle")
         recordingStartedAt = Date()
-        combinedVoiceLevels.reset()
-        for (source, analyzer) in [computerVoiceAnalyzer, microphoneVoiceAnalyzer].enumerated() {
-            analyzer.start { [weak self] level, spectrum, probability in
-                guard let self else { return }
-                let frame = self.combinedVoiceLevels.update(source: source, level: level, spectrum: spectrum,
-                                                           probability: probability)
-                self.indicator.setAudioLevel(frame.level, spectrum: frame.spectrum, voiceProbability: frame.voiceProbability)
-            }
-        }
         computerRecorder.start(session: session) { [weak self] result in
             guard let self else { return }
             self.computerTransition = false
@@ -3024,7 +3079,6 @@ private final class AppDelegate:
             case .success:
                 self.transcriptModel.recording = true
                 DiagnosticLog.write("Computer recording started input=\(self.computerRecorder.microphoneName ?? "unknown")")
-                self.indicator.show(.recording)
                 self.refreshActivityUI()
                 let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
                     guard let self else { return }
@@ -3045,8 +3099,6 @@ private final class AppDelegate:
                     }
                 }
             case .failure(let error):
-                self.computerVoiceAnalyzer.stop()
-                self.microphoneVoiceAnalyzer.stop()
                 self.state = .idle
                 try? session.finish(duration: 0)
                 self.activeRecordingSession = nil
@@ -3065,10 +3117,6 @@ private final class AppDelegate:
         transcriptModel.meter.level = 0
         _ = computerLevelMailbox.take()
         computerRecorder.setPaused(transcriptModel.paused)
-        computerVoiceAnalyzer.reset()
-        microphoneVoiceAnalyzer.reset()
-        combinedVoiceLevels.reset()
-        if transcriptModel.paused { indicator.hide() } else { indicator.show(.recording) }
         refreshActivityUI()
     }
 
@@ -3079,10 +3127,9 @@ private final class AppDelegate:
         recordingClock = nil
         transcriptModel.busy = true
         transcriptModel.message = "Preparing recording…"
-        indicator.show(.processing)
+        indicator.hide()
+        setStatus("Finishing recording…", symbol: "ellipsis.circle.fill")
         let session = activeRecordingSession
-        computerVoiceAnalyzer.stop()
-        microphoneVoiceAnalyzer.stop()
         computerRecorder.stop { [weak self] result in
             guard let self else { return }
             self.computerTransition = false
@@ -3107,7 +3154,7 @@ private final class AppDelegate:
         if NSApp.currentEvent?.type == .rightMouseUp {
             showSettings()
         } else {
-            if transcriptWindow == nil { transcriptWindow = TranscriptWindowController(model: transcriptModel) }
+            if transcriptWindow == nil { transcriptWindow = TranscriptWindowController(model: transcriptModel, toggleButton: statusItem.button) }
             transcriptWindow?.toggle()
         }
     }
@@ -3115,7 +3162,7 @@ private final class AppDelegate:
     private func showSettings() {
         refreshSettings()
         transcriptModel.showingSettings = true
-        if transcriptWindow == nil { transcriptWindow = TranscriptWindowController(model: transcriptModel) }
+        if transcriptWindow == nil { transcriptWindow = TranscriptWindowController(model: transcriptModel, toggleButton: statusItem.button) }
         transcriptWindow?.present()
     }
 
@@ -3399,22 +3446,32 @@ private final class AppDelegate:
         transcriptModel.message = text
         transcriptModel.busy = state == .recording || computerTransition ||
             (pendingTranscriptions >= maximumPendingTranscriptions && !transcriptModel.recording)
-        statusItem.button?.image = NSImage(
-            systemSymbolName: symbol,
-            accessibilityDescription: text
-        )
-        statusItem.button?.image?.isTemplate = true
-        statusItem.button?.toolTip = "Luxit — \(text)"
+        recordingPresence?.update(conversationPresence, defaultSymbol: symbol, detail: text)
         refreshSettings()
     }
 
+    private var conversationPresence: RecordingPresence {
+        if state == .recording { return .recording }
+        if state == .computerRecording {
+            if computerTransition { return transcriptModel.recording ? .finishing : .starting }
+            return transcriptModel.paused ? .paused : .recording
+        }
+        if sessionChunkInFlight || speakerAnalysisInFlight || recordingSessions.values.contains(where: {
+            !failedRecordingSessions.contains($0.snapshot.id) && !$0.snapshot.complete
+        }) { return .processing }
+        return .idle
+    }
+
     private func refreshSettings() {
+        refreshCorrections()
         let settings = transcriptModel.settings
         let snapshot = statistics.snapshot
         let displayedModel = pendingModelActivation ?? selectedModel
         settings.selectedModelID = displayedModel.rawValue
         settings.selectedModelName = displayedModel.displayName
         settings.canSelectModel = pendingModelActivation == nil && state == .idle && pendingTranscriptions == 0
+        settings.speakerDetection = SpeakerAnalyzer.modelURL == nil ? "Local model unavailable" :
+            (selectedModel.usesParakeetEngine ? "Automatic for recordings · up to \(SpeakerTurn.maximumSpeakers) voices per source" : "Choose Parakeet to label speakers in recordings")
         settings.usage = String(format: "%.2f hours · %@ words · %@ dictations",
                                 snapshot.audioSeconds / 3600, snapshot.words.formatted(), snapshot.dictations.formatted())
         settings.performance = snapshot.dictations == 0 ? "No completed dictations" :
@@ -3431,6 +3488,21 @@ private final class AppDelegate:
             capsLock.hasInputMonitoringAccess() ? "Input Monitoring ✓" : "Input Monitoring needed",
             AVCaptureDevice.authorizationStatus(for: .audio) == .authorized ? "Microphone ✓" : "Microphone needed"
         ].joined(separator: " · ")
+    }
+
+    private func refreshCorrections() {
+        corrections.reloadIfNeeded()
+        transcriptModel.settings.corrections = corrections.replacements
+        transcriptModel.settings.correctionsSummary = corrections.summary
+        transcriptModel.settings.correctionsError = corrections.error
+    }
+
+    private func correctedTranscription(_ result: TranscriptionResult) -> TranscriptionResult {
+        let output = corrections.apply(TranscriptionResult(
+            text: result.text.trimmingCharacters(in: .whitespacesAndNewlines), words: result.words))
+        transcriptModel.settings.correctionsSummary = corrections.summary
+        transcriptModel.settings.correctionsError = corrections.error
+        return output
     }
 
     private func toggleDictation(timing: GlobalCapsLock.PressTiming) {
@@ -3592,7 +3664,7 @@ private final class AppDelegate:
                     try? FileManager.default.removeItem(at: cafURL)
                     try? FileManager.default.removeItem(at: wavURL)
                     self?.finishTranscription(
-                        result,
+                        result.map(\.text),
                         jobID: jobID,
                         source: source,
                         createdAt: createdAt,
@@ -3654,7 +3726,7 @@ private final class AppDelegate:
         var errorMessage: String?
         switch result {
         case .success(let rawText):
-            let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
+            let text = correctedTranscription(TranscriptionResult(text: rawText)).text
             if !text.isEmpty {
                 statistics.record(
                     audioSeconds: audioDuration,
@@ -3715,18 +3787,24 @@ private final class AppDelegate:
         recordingEndedWithoutSpeech: Bool = false
     ) {
         if state == .computerRecording {
+            indicator.hide()
             let microphone = computerRecorder.microphoneName ?? "Microphone"
-            setStatus(transcriptModel.paused ? "Recording paused" : "Recording · \(microphone)", symbol: "record.circle.fill")
+            let text = computerTransition ? (transcriptModel.recording ? "Finishing recording…" : "Starting recording…")
+                : (transcriptModel.paused ? "Recording paused" : "Recording · \(microphone)")
+            setStatus(text, symbol: "record.circle.fill")
         } else if state == .recording {
             indicator.show(.recording)
             setStatus(recordingStatusText(), symbol: "record.circle.fill")
-        } else if pendingTranscriptions > 0 {
+        } else if pendingTranscriptions > (sessionChunkInFlight ? 1 : 0) {
             indicator.show(.processing)
             let noun = pendingTranscriptions == 1 ? "transcription" : "transcriptions"
             setStatus(
                 "\(pendingTranscriptions) \(noun) processing — Caps Lock starts the next recording",
                 symbol: "ellipsis.circle.fill"
             )
+        } else if conversationPresence == .processing {
+            indicator.hide()
+            setStatus("Finishing recording transcript and speaker labels…", symbol: "ellipsis.circle.fill")
         } else {
             if recordingEndedWithoutSpeech {
                 indicator.completeRecording()

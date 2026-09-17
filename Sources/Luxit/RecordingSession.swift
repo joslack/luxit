@@ -9,6 +9,7 @@ struct RecordingChunk: Codable, Identifiable, Equatable {
     var overlap: TimeInterval = 0
     var sealed = false
     var text: String?
+    var words: [TranscriptionWord]? = nil
     var filename: String { "\(id.uuidString).f32" }
 }
 
@@ -17,11 +18,13 @@ struct RecordingSessionSnapshot: Codable {
     let createdAt: Date
     var duration: TimeInterval = 0
     var stopped = false
+    var speakerState: SpeakerAnalysisState? = nil
+    var speakerTurns: [SpeakerTurn]? = nil
     var chunks: [RecordingChunk] = []
     var pending: [RecordingChunk] {
         chunks.filter { $0.sealed && $0.text == nil }.sorted { $0.start < $1.start }
     }
-    var complete: Bool { stopped && pending.isEmpty && chunks.allSatisfy(\.sealed) }
+    var complete: Bool { stopped && pending.isEmpty && chunks.allSatisfy(\.sealed) && speakerState != .pending }
 
     func entry(state: RecordingTranscriptState) -> TranscriptEntry {
         var previous: [RecordingAudioSource: RecordingChunk] = [:]
@@ -34,13 +37,25 @@ struct RecordingSessionSnapshot: Codable {
             }
             previous[chunk.source] = chunk
             guard !text.isEmpty else { return nil }
-            return TranscriptSegment(id: chunk.id, start: chunk.start, source: chunk.source, text: text,
-                                     duration: chunk.duration)
+            var segment = TranscriptSegment(id: chunk.id, start: chunk.start, source: chunk.source, text: text,
+                                            duration: chunk.duration)
+            if let words = chunk.words, let turns = speakerTurns {
+                // Stitching removes whole leading words. Use only timings whose
+                // remaining text still round-trips to the visible paragraph.
+                let visible = SpeakerAlignment.normalized(text)
+                if let index = (0...words.count).first(where: {
+                    SpeakerAlignment.normalized(words.dropFirst($0).map(\.text).joined(separator: " ")) == visible
+                }) {
+                    segment.speakerSpans = SpeakerAlignment.spans(text: text, words: Array(words.dropFirst(index)),
+                        turns: turns, source: chunk.source, offset: chunk.start)
+                }
+            }
+            return segment
         }
         let text = TranscriptSegment.coalescingSources(segments)
-            .map { "[\(TranscriptSegment.timestamp($0.start))] \($0.sourceTitle)\n\($0.text)" }.joined(separator: "\n\n")
+            .map { "[\(TranscriptSegment.timestamp($0.start))] \($0.sourceTitle)\n\($0.labeledText)" }.joined(separator: "\n\n")
         return TranscriptEntry(id: id, createdAt: createdAt, duration: duration, source: .recording,
-                               text: text, segments: segments, recordingState: state)
+                               text: text, segments: segments, recordingState: state, speakerState: speakerState)
     }
 }
 
@@ -86,9 +101,10 @@ final class RecordingSession {
     private var manifestURL: URL { directory.appendingPathComponent("session.json") }
     var snapshot: RecordingSessionSnapshot { lock.lock(); defer { lock.unlock() }; return value }
 
-    init(root: URL, id: UUID = UUID(), createdAt: Date = Date()) throws {
+    init(root: URL, id: UUID = UUID(), createdAt: Date = Date(), detectSpeakers: Bool = false) throws {
         directory = root.appendingPathComponent(id.uuidString, isDirectory: true)
         value = RecordingSessionSnapshot(id: id, createdAt: createdAt)
+        value.speakerState = detectSpeakers ? .pending : nil
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
                                                 attributes: [.posixPermissions: 0o700])
         try persist()
@@ -211,15 +227,28 @@ final class RecordingSession {
         try persist()
     }
 
-    func complete(chunkID: UUID, text: String) throws {
+    func complete(chunkID: UUID, text: String, words: [TranscriptionWord]? = nil) throws {
         lock.lock(); defer { lock.unlock() }
         guard let i = value.chunks.firstIndex(where: { $0.id == chunkID }) else { return }
+        let original = value.chunks[i]
         value.chunks[i].text = text
-        do { try persist() } catch { value.chunks[i].text = nil; throw error }
+        value.chunks[i].words = words
+        do { try persist() } catch { value.chunks[i] = original; throw error }
+    }
+
+    func updateSpeakers(turns: [SpeakerTurn], state: SpeakerAnalysisState) throws {
+        lock.lock(); defer { lock.unlock() }
+        let previous = value
+        value.speakerTurns = turns
+        value.speakerState = state
+        do { try persist() } catch { value = previous; throw error }
     }
 
     /// Call only after the updated transcript has also been saved to history.
     func removeCompletedAudio(chunk: RecordingChunk) {
+        // Restart recovery replays the full source to rebuild speaker identities.
+        // The complete journal is removed after final labels and text are durable.
+        guard snapshot.speakerState != .pending else { return }
         try? FileManager.default.removeItem(at: directory.appendingPathComponent(chunk.filename))
         try? FileManager.default.removeItem(at: directory.appendingPathComponent(chunk.id.uuidString + ".wav"))
     }

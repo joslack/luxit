@@ -3,6 +3,9 @@ set -euo pipefail
 
 project_dir="$(cd "$(dirname "$0")/.." && pwd)"
 "$project_dir/scripts/check-whisper-runtime.sh" --check
+"$project_dir/scripts/build-speaker-runtime.sh"
+speaker_model="$(python3 "$project_dir/scripts/prepare-speaker-model.py")"
+speaker_runtime="$project_dir/.build/dependencies/FluidAudio-0.15.7/.build/arm64-apple-macosx/release"
 
 build_dir="$project_dir/.build"
 output_app="$project_dir/dist/Luxit.app"
@@ -50,6 +53,7 @@ swiftc \
   -framework AudioToolbox \
   -framework AVFoundation \
   -framework CoreAudio \
+  -framework CoreML \
   -framework ScreenCaptureKit \
   -framework SwiftUI \
   -framework IOKit \
@@ -62,6 +66,10 @@ swiftc \
   -L"$ggml_prefix/lib" \
   -Xlinker -rpath -Xlinker "$whisper_prefix/lib" \
   -Xlinker -rpath -Xlinker "$ggml_prefix/lib" \
+  -I"$speaker_runtime/Modules" \
+  -I"$project_dir/.build/dependencies/FluidAudio-0.15.7/Sources/FastClusterWrapper/include" \
+  -I"$project_dir/.build/dependencies/FluidAudio-0.15.7/Sources/MachTaskSelfWrapper/include" \
+  -L"$speaker_runtime" -lFluidAudio -lc++ \
   -lwhisper \
   -lparakeet \
   -lggml \
@@ -79,7 +87,13 @@ swiftc \
   "$project_dir/Sources/Luxit/VoiceOrbMotion.swift" \
   "$project_dir/Sources/Luxit/VoiceOrbDissolution.swift" \
   "$project_dir/Sources/Luxit/MetalOrbRenderer.swift" \
+  "$project_dir/Sources/Luxit/SpeakerTranscript.swift" \
+  "$project_dir/Sources/Luxit/TranscriptCorrections.swift" \
+  "$project_dir/Sources/Luxit/ParakeetWordTiming.swift" \
+  "$project_dir/Sources/Luxit/SpeakerAnalyzer.swift" \
   "$project_dir/Sources/Luxit/TranscriptHistory.swift" \
+  "$project_dir/Sources/Luxit/TranscriptContent.swift" \
+  "$project_dir/Sources/Luxit/RecordingPresence.swift" \
   "$project_dir/Sources/Luxit/TranscriptWindow.swift" \
   "$project_dir/Sources/Luxit/TranscriptPanelLayout.swift" \
   "$project_dir/Sources/Luxit/ComputerAudioRecorder.swift" \
@@ -97,6 +111,11 @@ cp "$project_dir/Resources/Info.plist" "$contents_dir/Info.plist"
   -c "Set :CFBundleVersion $build_number" \
   "$contents_dir/Info.plist"
 cp "$project_dir/Resources/AppIcon.icns" "$resources_dir/AppIcon.icns"
+cp -R "$speaker_model" "$resources_dir/"
+cp "$project_dir/Resources/SpeakerNotices.txt" "$resources_dir/"
+cp "$project_dir/Resources/LSEEND-LICENSE.txt" "$resources_dir/"
+cp -R "$project_dir/.build/dependencies/FluidAudio-0.15.7/ThirdPartyLicenses" "$resources_dir/"
+cp "$project_dir/.build/dependencies/FluidAudio-0.15.7/LICENSE" "$resources_dir/FluidAudio-LICENSE.txt"
 xattr -cr "$app_dir"
 "$project_dir/scripts/sign-app.sh" "$app_dir"
 
