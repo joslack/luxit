@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.13.3 — 2026-09-17
+
+- Keep listening-cloud dots at a consistent logical size when display scaling
+  changes. Convert particle sizes using the frame's actual Metal texture so a
+  queued frame cannot reuse another display's pixel scale.
+- Check rendered particle sizes across Retina, standard, and reduced-resolution
+  surfaces, including stale display-scale data.
+
 ## 0.13.2 — 2026-09-17
 
 - Restore the Caps Lock shortcut after docking, undocking, or connecting and

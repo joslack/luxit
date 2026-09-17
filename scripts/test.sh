@@ -120,6 +120,22 @@ swiftc \
 
 "$build_dir/VoiceOrbConfigurationTests"
 
+swiftc \
+  -swift-version 5 \
+  -sdk "$sdk_path" \
+  -target arm64-apple-macosx26.0 \
+  -module-cache-path "$module_cache" \
+  -framework AppKit -framework Metal -framework MetalKit \
+  "$project_dir/Sources/Luxit/VoiceOrbGeometry.swift" \
+  "$project_dir/Sources/Luxit/VoiceOrbMotion.swift" \
+  "$project_dir/Sources/Luxit/VoiceOrbDissolution.swift" \
+  "$project_dir/Sources/Luxit/VoiceOrbLayout.swift" \
+  "$project_dir/Sources/Luxit/MetalOrbRenderer.swift" \
+  "$project_dir/Tests/MetalOrbScaleTests.swift" \
+  -o "$build_dir/MetalOrbScaleTests"
+
+"$build_dir/MetalOrbScaleTests"
+
 if rg -n \
   'IndicatorStyle|IndicatorColor|IndicatorPlacement|OrbDynamicsPreset|indicator\.(style|color|placement|orbDynamics)' \
   "$project_dir/Sources/Luxit"; then

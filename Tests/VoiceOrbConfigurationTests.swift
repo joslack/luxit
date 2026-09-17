@@ -192,6 +192,22 @@ private enum VoiceOrbConfigurationTests {
         expect(frame.minY == visibleFrame.minY + VoiceOrbLayout.inset,
                "orb is inset from the bottom edge")
 
+        for scale: CGFloat in [0.5, 1, 1.5, 2, 3] {
+            let pixelsPerPoint = VoiceOrbLayout.pixelsPerPoint(
+                drawableWidth: VoiceOrbLayout.size.width * scale,
+                logicalWidth: VoiceOrbLayout.size.width)
+            expect(pixelsPerPoint == scale,
+                   "particle scale follows the actual render target, including reduced-resolution frames")
+        }
+        for screen in [CGRect(x: 0, y: 0, width: 1512, height: 982),
+                       CGRect(x: -2560, y: -200, width: 2560, height: 1440)] {
+            expect(VoiceOrbLayout.frame(in: screen).size == frame.size,
+                   "moving to another screen preserves the cloud's logical dimensions")
+        }
+        expect(VoiceOrbLayout.pixelsPerPoint(drawableWidth: 0, logicalWidth: 320) == 1 &&
+               VoiceOrbLayout.pixelsPerPoint(drawableWidth: 640, logicalWidth: 0) == 1,
+               "an unrealized view has a finite neutral pixel scale")
+
         expect(VoiceOrbMotion.voiceSpeed(level: 0.6) > VoiceOrbMotion.voiceSpeed(level: 0) * 8,
                "speech rapidly accelerates independent particle paths while silence stays calm")
         expect(VoiceOrbMotion.flowSpeed(level: 0.6) > VoiceOrbMotion.flowSpeed(level: 0) * 4,
