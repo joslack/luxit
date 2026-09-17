@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.13.1 — 2026-09-17
+
+- Provide a portable, checksum-verified speaker dependency package for Macs
+  unable to download the speaker model or runtime during installation.
+- Document offline speaker setup. The package also works with v0.13.0;
+  recording, transcription, and correction behavior is unchanged.
+
 ## 0.13.0 — 2026-09-17
 
 - Estimate individual speakers in Parakeet recordings with a local, CPU-only

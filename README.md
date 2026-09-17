@@ -43,6 +43,8 @@ Settings.
 On first install, Luxit downloads the recommended Parakeet Metal, voice
 activity, and speaker models. The speaker model adds about 44 MB to the app.
 Other transcription model choices are not downloaded automatically.
+If the speaker download fails, use the [offline speaker package](docs/offline-speakers.md).
+It supplies the same verified dependencies without contacting the model host.
 
 ## Use
 

@@ -51,14 +51,28 @@ jobs:
           fi
           version="${release_version%%+*}"
           test "v$version" = "$RELEASE_TAG"
-      - name: Create GitHub release
+      - name: Create or publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          if gh release view "$RELEASE_TAG" \
-            --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "Release $RELEASE_TAG already exists."
+          if draft="$(gh release view "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2>/dev/null)"; then
+            case "$draft" in
+              true)
+                # Maintainers can stage verified assets before approving this
+                # job; immutable releases cannot accept assets after publishing.
+                gh release edit "$RELEASE_TAG" \
+                  --repo "$GITHUB_REPOSITORY" --draft=false
+                ;;
+              false)
+                echo "Release $RELEASE_TAG already exists."
+                ;;
+              *)
+                echo "Unexpected release state." >&2
+                exit 1
+                ;;
+            esac
             exit 0
           fi
           gh release create "$RELEASE_TAG" \
