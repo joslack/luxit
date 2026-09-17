@@ -3,7 +3,7 @@
 If installing Luxit fails while downloading the speaker model or FluidAudio
 runtime, download the [offline speaker package](https://github.com/joslack/luxit/releases/download/v0.13.1/Luxit-speaker-support.zip)
 from GitHub. It contains the same pinned model and runtime source archive used
-by Luxit, with licenses and SHA-256 checksums. It works with v0.13.0–v0.13.2.
+by Luxit, with licenses and SHA-256 checksums. It works with v0.13.0–v0.13.3.
 
 The package is about 45 MB. It contains no recordings, transcripts, personal
 correction rules, or signing identity. It is a dependency cache, not a prebuilt

@@ -145,10 +145,6 @@ final class MetalOrbRenderer {
         let rotation = animationPhase * 0.11
         let accentComponents = Self.components(of: accent)
         let highlightComponents = Self.components(of: highlight)
-        let backingScale = CGFloat(
-            (view?.drawableSize.width ?? bounds.width) / bounds.width
-        )
-
         uniformValues[0] = Float(bounds.width)
         uniformValues[1] = Float(bounds.height)
         uniformValues[2] = Float(baseRadius)
@@ -169,7 +165,8 @@ final class MetalOrbRenderer {
         uniformValues[17] = Float(highlightComponents.green)
         uniformValues[18] = Float(highlightComponents.blue)
         uniformValues[19] = Float(pulse)
-        uniformValues[20] = Float(max(1, backingScale))
+        // Pixel scale is filled from the acquired drawable on the render queue.
+        uniformValues[20] = 1
         uniformValues[21] = Float(max(0, min(1, appearance)))
         uniformValues[22] = Float(VoiceOrbMotion.currentScale)
         uniformValues[23] = Float(VoiceOrbMotion.particleJitterScale(level: level))
@@ -245,6 +242,7 @@ final class MetalOrbRenderer {
             finishFrame(succeeded: false)
             return
         }
+        let uniforms = Self.uniformsForDrawable(uniforms, pixelWidth: drawable.texture.width)
         // The command queue completes in order and the two-slot frame gate
         // protects each buffer until its previous GPU use has completed.
         particleValues.withUnsafeBytes { bytes in
@@ -284,6 +282,19 @@ final class MetalOrbRenderer {
         frameGate.signal()
     }
 
+    static func uniformsForDrawable(_ values: [Float], pixelWidth: Int) -> [Float] {
+        var result = values
+        // A queued frame can outlive a backing-scale change. MTKView's cached
+        // drawableSize is not necessarily the size of the texture we acquired.
+        // Point sprites use pixels, while geometry and the AppKit fallback use
+        // points: convert exactly once using this frame's actual render target.
+        result[20] = Float(VoiceOrbLayout.pixelsPerPoint(
+            drawableWidth: CGFloat(pixelWidth),
+            logicalWidth: CGFloat(values[0])
+        ))
+        return result
+    }
+
     private static func components(
         of color: NSColor
     ) -> (red: CGFloat, green: CGFloat, blue: CGFloat) {
@@ -310,7 +321,7 @@ final class MetalOrbRenderer {
         return converted
     }()
 
-    private static let shader = """
+    static let shader = """
     #include <metal_stdlib>
     using namespace metal;
 
