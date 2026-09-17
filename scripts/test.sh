@@ -32,6 +32,7 @@ for script in \
 done
 "$project_dir/scripts/bump-version.sh" patch --dry-run >/dev/null
 "$project_dir/scripts/test-versioning.sh"
+python3 "$project_dir/Tests/ReleaseWorkflowTests.py"
 "$project_dir/scripts/test-whisper-runtime.sh"
 
 if [[ "$(/usr/libexec/PlistBuddy \

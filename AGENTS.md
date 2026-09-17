@@ -91,6 +91,12 @@ repository settings when available. Do not introduce `pull_request_target`,
 dynamic action references, or execution of untrusted pull-request code in a
 privileged workflow.
 
+For releases with downloadable assets, create a draft for the verified public
+tag and attach the checksum-verified public files before approving its
+`github-release` deployment. The existing workflow publishes that prepared
+draft after checking the tag and VERSION. Once published, do not modify the
+release's assets or tag; use a new release for additional files.
+
 ## Change discipline
 
 Preserve unrelated user changes. Keep the README centered on installation,
