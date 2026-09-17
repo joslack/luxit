@@ -62,6 +62,19 @@ swiftc \
   -sdk "$sdk_path" \
   -target arm64-apple-macosx26.0 \
   -module-cache-path "$module_cache" \
+  -framework IOKit \
+  "$project_dir/Sources/Luxit/KeyboardDeviceMonitor.swift" \
+  "$project_dir/Sources/Luxit/KeyboardRecovery.swift" \
+  "$project_dir/Tests/KeyboardRecoveryTests.swift" \
+  -o "$build_dir/KeyboardRecoveryTests"
+
+"$build_dir/KeyboardRecoveryTests"
+
+swiftc \
+  -swift-version 5 \
+  -sdk "$sdk_path" \
+  -target arm64-apple-macosx26.0 \
+  -module-cache-path "$module_cache" \
   -framework Accelerate \
   "$project_dir/Sources/Luxit/LogSpectrumAnalyzer.swift" \
   "$project_dir/Tests/LogSpectrumAnalyzerTests.swift" \

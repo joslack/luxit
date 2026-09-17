@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.13.2 — 2026-09-17
+
+- Restore the Caps Lock shortcut after docking, undocking, or connecting and
+  disconnecting keyboards without requiring a screen wake or app restart.
+- Recheck the remap after keyboard services settle, combine bursts of device
+  changes, and cancel pending repairs when quitting. Keyboard swaps keep the
+  active shortcut listener and recording intact.
+
 ## 0.13.1 — 2026-09-17
 
 - Provide a portable, checksum-verified speaker dependency package for Macs
