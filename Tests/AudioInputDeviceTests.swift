@@ -71,11 +71,25 @@ private enum AudioInputDeviceTests {
             "the engine should be replaced after the default input changes"
         )
 
+        tracker.markConfigurationChanged()
+        expect(
+            tracker.requiresEngineReplacement(for: AudioDeviceID(41)),
+            "a call changing the same microphone's format must replace the cached engine"
+        )
+        tracker.markPrepared(for: AudioDeviceID(41))
+        expect(
+            !tracker.requiresEngineReplacement(for: AudioDeviceID(41)),
+            "a newly prepared engine clears the old configuration change"
+        )
+        tracker.markConfigurationChanged()
+
         tracker.invalidate()
         expect(
             tracker.preparedDeviceID == nil,
             "invalidating a route should clear the prepared device"
         )
+        expect(!tracker.requiresEngineReplacement(for: AudioDeviceID(41)),
+               "an entirely new engine does not inherit the old engine's invalidation")
 
         print("Audio input route tests passed")
     }

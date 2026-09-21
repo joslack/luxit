@@ -45,12 +45,17 @@ final class VoiceActivityAnalyzer {
         lock.unlock()
     }
 
-    func submit(samples: UnsafePointer<Float>, count: Int, sampleRate: Double) {
-        guard count > 0, sampleRate.isFinite, sampleRate >= 8_000 else { return }
+    func submit(samples: UnsafePointer<Float>, count: Int, sampleRate: Double, stride: Int = 1) {
+        guard count > 0, stride > 0, sampleRate.isFinite, sampleRate >= 8_000 else { return }
         // Bound both retained audio and queued work, even if an input device
         // delivers a very large callback or the computer stalls temporarily.
         let kept = min(count, Int(sampleRate / 4))
-        let copy = Array(UnsafeBufferPointer(start: samples + count - kept, count: kept))
+        let copy: [Float]
+        if stride == 1 {
+            copy = Array(UnsafeBufferPointer(start: samples + count - kept, count: kept))
+        } else {
+            copy = (count - kept..<count).map { samples[$0 * stride] }
+        }
         lock.lock()
         guard handler != nil else { lock.unlock(); return }
         pending = (copy, sampleRate, generation)
