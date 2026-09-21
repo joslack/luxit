@@ -15,7 +15,7 @@ fi
 clang -std=c11 -O3 -I"$whisper/include" -I"$ggml/include" -c "$project_dir/Sources/Luxit/WhisperBridge.c" -o "$build/WhisperBridge.o"
 swiftc -swift-version 5 -O -sdk "$(xcrun --sdk macosx --show-sdk-path)" \
  -target arm64-apple-macosx26.0 -module-cache-path "$build/ModuleCache" \
- -framework IOKit -import-objc-header "$project_dir/Sources/Luxit/WhisperBridge.h" \
+ -framework IOKit -framework AVFoundation -import-objc-header "$project_dir/Sources/Luxit/WhisperBridge.h" \
  -I"$whisper/include" -I"$ggml/include" -L"$whisper/lib" -L"$ggml/lib" \
  -lwhisper -lparakeet -lggml -lggml-base \
  -Xlinker -rpath -Xlinker "$whisper/lib" -Xlinker -rpath -Xlinker "$ggml/lib" \

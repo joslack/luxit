@@ -8,6 +8,18 @@ private func expect(_ condition: @autoclosure () -> Bool, _ message: String) {
 @main
 private enum VoiceActivityAnalyzerTests {
     static func main() throws {
+        let analyzer = VoiceActivityAnalyzer(modelURL: URL(fileURLWithPath: "/no-luxit-test-model"))
+        let delivered = DispatchSemaphore(value: 0)
+        var interleavedLevel: Float = -1
+        analyzer.start { level, _, _ in interleavedLevel = level; delivered.signal() }
+        let interleaved = (0..<(1024 * 3)).map { Float($0 % 3 == 2 ? 0.02 : 0.5) }
+        interleaved.withUnsafeBufferPointer {
+            analyzer.submit(samples: $0.baseAddress! + 2, count: 1024, sampleRate: 16_000, stride: 3)
+        }
+        expect(delivered.wait(timeout: .now() + 5) == .success, "interleaved microphone audio reaches visualization")
+        analyzer.stop()
+        expect(abs(interleavedLevel - 0.02) < 0.0001, "visualization analyzes only the selected channel in interleaved input")
+
         let absent = VoiceActivityProcessor(modelURL: URL(fileURLWithPath: "/no-luxit-test-model"))
         let fallback = absent.process(samples: [Float](repeating: 0, count: 1024), sampleRate: 16_000)
         expect(!fallback.isEmpty && fallback.allSatisfy { $0.voiceProbability == nil },

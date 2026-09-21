@@ -78,6 +78,7 @@ swiftc \
   "$project_dir/Sources/Luxit/KeyboardDeviceMonitor.swift" \
   "$project_dir/Sources/Luxit/KeyboardRecovery.swift" \
   "$project_dir/Sources/Luxit/AudioInputDevice.swift" \
+  "$project_dir/Sources/Luxit/DictationAudio.swift" \
   "$project_dir/Sources/Luxit/LogSpectrumAnalyzer.swift" \
   "$project_dir/Sources/Luxit/VoiceAnimationFilter.swift" \
   "$project_dir/Sources/Luxit/VoiceAnimationEnvelope.swift" \

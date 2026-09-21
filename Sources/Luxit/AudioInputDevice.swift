@@ -31,18 +31,26 @@ enum AudioInputPolicy {
 
 struct AudioInputRouteTracker {
     private(set) var preparedDeviceID: AudioDeviceID?
+    private var configurationChanged = false
 
     func requiresEngineReplacement(for deviceID: AudioDeviceID) -> Bool {
+        if configurationChanged { return true }
         guard let preparedDeviceID else { return false }
         return preparedDeviceID != deviceID
     }
 
+    mutating func markConfigurationChanged() {
+        configurationChanged = true
+    }
+
     mutating func markPrepared(for deviceID: AudioDeviceID) {
         preparedDeviceID = deviceID
+        configurationChanged = false
     }
 
     mutating func invalidate() {
         preparedDeviceID = nil
+        configurationChanged = false
     }
 }
 

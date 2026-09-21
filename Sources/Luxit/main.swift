@@ -1330,42 +1330,69 @@ private final class EdgeIndicator {
     }
 }
 
-private struct RecordedAudio {
-    let url: URL
-    let duration: TimeInterval
-    let peakLevel: Float
-    let voicedSeconds: TimeInterval
-
-    var isLikelySilent: Bool {
-        duration < 0.35 || peakLevel < 0.0075 || voicedSeconds < 0.12
-    }
-}
-
 private final class AudioRecorder {
     private var engine = AVAudioEngine()
     private let voiceAnalyzer = VoiceActivityAnalyzer()
     private let metricsLock = NSLock()
-    private let speechLevelThreshold: Float = 0.006
     private var routeTracker = AudioInputRouteTracker()
+    private var configurationObserver: NSObjectProtocol?
+    var onInputInterrupted: (() -> Void)?
     private var file: AVAudioFile?
     private var recordingURL: URL?
     private var startedAt: Date?
-    private var peakLevel: Float = 0
-    private var voicedSeconds: TimeInterval = 0
+    private var metrics = DictationAudioMetrics()
     private var isPrepared = false
+
+    init() { observeConfigurationChanges() }
+
+    deinit {
+        if let configurationObserver { NotificationCenter.default.removeObserver(configurationObserver) }
+    }
+
+    private func observeConfigurationChanges() {
+        if let configurationObserver { NotificationCenter.default.removeObserver(configurationObserver) }
+        let observedEngine = engine
+        configurationObserver = NotificationCenter.default.addObserver(
+            forName: .AVAudioEngineConfigurationChange, object: observedEngine, queue: nil
+        ) { [weak self, weak observedEngine] _ in
+            // AVAudioEngine posts from an internal queue. In particular, never
+            // stop or release an engine inside its configuration notification.
+            DispatchQueue.main.async { [weak self, weak observedEngine] in
+                guard let self, let observedEngine, self.engine === observedEngine else { return }
+                self.routeTracker.markConfigurationChanged()
+                self.isPrepared = false
+                DiagnosticLog.write("Microphone configuration changed; recorder will rebuild")
+                if self.startedAt != nil, !observedEngine.isRunning {
+                    self.onInputInterrupted?()
+                }
+            }
+        }
+    }
+
+    private func replaceEngineIfNeeded(for device: AudioInputDevice) {
+        guard routeTracker.requiresEngineReplacement(for: device.id) else { return }
+        engine.stop()
+        engine.reset()
+        engine = AVAudioEngine()
+        observeConfigurationChanges()
+        routeTracker.invalidate()
+        isPrepared = false
+        DiagnosticLog.write("Audio input or configuration changed; rebuilt recorder id=\(device.id)")
+    }
 
     func requestPermission() {
         AVCaptureDevice.requestAccess(for: .audio) { _ in }
     }
 
     func prepareIfAuthorized() {
-        guard !isPrepared,
+        guard startedAt == nil, !isPrepared,
               AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else {
             return
         }
         let beganAt = CACurrentMediaTime()
         do {
             let device = try SystemAudioInput.preferredDevice()
+            replaceEngineIfNeeded(for: device)
             let input = engine.inputNode
             try SystemAudioInput.bind(input, to: device)
             _ = input.outputFormat(forBus: 0)
@@ -1392,18 +1419,7 @@ private final class AudioRecorder {
     func start(level: @escaping VoiceActivityAnalyzer.Handler) throws {
         let beganAt = CACurrentMediaTime()
         let device = try SystemAudioInput.preferredDevice()
-        if routeTracker.requiresEngineReplacement(for: device.id) {
-            let previousDeviceID = routeTracker.preparedDeviceID
-            engine.stop()
-            engine.reset()
-            engine = AVAudioEngine()
-            routeTracker.invalidate()
-            isPrepared = false
-            DiagnosticLog.write(
-                "Audio input changed id=\(previousDeviceID ?? 0)->\(device.id); " +
-                "rebuilt recorder"
-            )
-        }
+        replaceEngineIfNeeded(for: device)
 
         let input = engine.inputNode
         try SystemAudioInput.bind(input, to: device)
@@ -1422,8 +1438,7 @@ private final class AudioRecorder {
         file = audioFile
         recordingURL = url
         metricsLock.lock()
-        peakLevel = 0
-        voicedSeconds = 0
+        metrics = DictationAudioMetrics()
         metricsLock.unlock()
 
         voiceAnalyzer.start(handler: level)
@@ -1436,21 +1451,12 @@ private final class AudioRecorder {
                 NSLog("Luxit audio write failed: \(error.localizedDescription)")
             }
 
-            if let channels = buffer.floatChannelData, buffer.frameLength > 0 {
-                let samples = channels[0]
-                var sum: Float = 0
-                for index in 0..<Int(buffer.frameLength) {
-                    sum += samples[index] * samples[index]
-                }
-                let rms = sqrt(sum / Float(buffer.frameLength))
-                self.voiceAnalyzer.submit(samples: samples, count: Int(buffer.frameLength), sampleRate: format.sampleRate)
-                let bufferSeconds = Double(buffer.frameLength) / format.sampleRate
-                self.metricsLock.lock()
-                self.peakLevel = max(self.peakLevel, rms)
-                if rms >= self.speechLevelThreshold {
-                    self.voicedSeconds += bufferSeconds
-                }
-                self.metricsLock.unlock()
+            self.metricsLock.lock()
+            let channel = self.metrics.append(buffer)
+            self.metricsLock.unlock()
+            if let channel, let channels = buffer.floatChannelData {
+                self.voiceAnalyzer.submit(samples: channels[channel], count: Int(buffer.frameLength),
+                                          sampleRate: buffer.format.sampleRate, stride: buffer.stride)
             }
         }
 
@@ -1490,16 +1496,16 @@ private final class AudioRecorder {
         guard let recordingURL else { return nil }
         let duration = max(0, Date().timeIntervalSince(startedAt ?? Date()))
         metricsLock.lock()
-        let peakLevel = self.peakLevel
-        let voicedSeconds = self.voicedSeconds
+        let metrics = self.metrics
         metricsLock.unlock()
         self.recordingURL = nil
         startedAt = nil
         return RecordedAudio(
             url: recordingURL,
             duration: duration,
-            peakLevel: peakLevel,
-            voicedSeconds: voicedSeconds
+            channel: metrics.selectedChannel ?? 0,
+            peakLevel: metrics.peakLevel,
+            voicedSeconds: metrics.voicedSeconds
         )
     }
 }
@@ -3273,6 +3279,12 @@ private final class AppDelegate:
             }
         }
 
+        recorder.onInputInterrupted = { [weak self] in
+            guard let self, self.state == .recording else { return }
+            DiagnosticLog.write("Microphone interrupted; preserving captured dictation")
+            self.finishRecording()
+            self.setStatus("Microphone changed — press Caps Lock to continue", symbol: "mic.badge.xmark")
+        }
         recorder.prepareIfAuthorized()
         capsLock.onPress = { [weak self] timing in
             self?.toggleDictation(timing: timing)
@@ -3594,14 +3606,15 @@ private final class AppDelegate:
         let peakDB = 20 * log10(max(recorded.peakLevel, 0.000_001))
         DiagnosticLog.write(
             String(
-                format: "Recording captured duration=%.2fs peak=%.1fdBFS voiced=%.2fs",
+                format: "Recording captured duration=%.2fs peak=%.1fdBFS voiced=%.2fs channel=%d",
                 recorded.duration,
                 peakDB,
-                recorded.voicedSeconds
+                recorded.voicedSeconds,
+                recorded.channel
             )
         )
 
-        if recorded.isLikelySilent {
+        if recorded.isEmptyOrTooShort {
             try? FileManager.default.removeItem(at: recorded.url)
             DiagnosticLog.write("Recording discarded: no speech detected")
             refreshActivityUI(
@@ -3629,7 +3642,7 @@ private final class AppDelegate:
             guard let self else { return }
             let wavURL = cafURL.deletingPathExtension().appendingPathExtension("wav")
             do {
-                try self.convertToWhisperWAV(cafURL: cafURL, wavURL: wavURL)
+                try self.convertToWhisperWAV(cafURL: cafURL, wavURL: wavURL, channel: recorded.channel)
                 let prompt = (try? String(contentsOf: self.promptURL, encoding: .utf8)) ?? ""
                 self.transcriptionEngine.transcribe(
                     profile: profile,
@@ -3665,16 +3678,10 @@ private final class AppDelegate:
         }
     }
 
-    private func convertToWhisperWAV(cafURL: URL, wavURL: URL) throws {
+    private func convertToWhisperWAV(cafURL: URL, wavURL: URL, channel: Int) throws {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/afconvert")
-        process.arguments = [
-            "-f", "WAVE",
-            "-d", "LEI16@16000",
-            "-c", "1",
-            cafURL.path,
-            wavURL.path
-        ]
+        process.arguments = DictationAudioConversion.arguments(input: cafURL, output: wavURL, channel: channel)
         let errorPipe = Pipe()
         process.standardError = errorPipe
         try process.run()
