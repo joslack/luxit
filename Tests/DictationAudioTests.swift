@@ -91,6 +91,17 @@ private enum DictationAudioTests {
                "a disconnected or silent microphone does not enqueue empty audio")
         expect(RecordedAudio(url: root, duration: 0.1, channel: 0, peakLevel: 0.1, voicedSeconds: 0.1).isEmptyOrTooShort,
                "accidental very short presses remain ignored")
+        var trailing = DictationAudioMetrics()
+        _ = trailing.append(buffer(channels: 1, active: 0))
+        expect(trailing.trailingSilence == 0, "voice resets trailing silence")
+        for _ in 0..<2 { _ = trailing.append(buffer(channels: 1, active: 0, amplitude: 0)) }
+        expect(abs(trailing.trailingSilence - 1.0) < 0.0001, "silent buffers accumulate trailing silence")
+        _ = trailing.append(buffer(channels: 2, active: 0, amplitude: 0))
+        expect(abs(trailing.trailingSilence - 1.0) < 0.0001, "trailing silence counts only matching layouts")
+        var stereo = DictationAudioMetrics()
+        _ = stereo.append(buffer(channels: 2, active: 1))
+        expect(stereo.trailingSilence == 0, "voice on a secondary channel counts as voice")
+
         print("Dictation audio channel and conversion tests passed")
     }
 }

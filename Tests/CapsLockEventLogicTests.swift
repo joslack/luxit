@@ -90,6 +90,34 @@ private enum CapsLockEventLogicTests {
             exit(1)
         }
 
+        expect(
+            CapsLockEventClassifier.classify(type: .keyDown, keyCode: remappedCaps, isAutorepeat: true),
+            .consume,
+            "an autorepeated F19 keyDown is consumed without toggling"
+        )
+        expect(
+            CapsLockEventClassifier.classify(type: .keyDown, keyCode: 0, isAutorepeat: true),
+            .passThrough,
+            "ordinary autorepeat still reaches applications"
+        )
+
+        // Holding remapped Caps Lock for ~2.4 s with KeyRepeat=2 produced one
+        // real key-down followed by ~70 autorepeats. It must toggle once.
+        let heldPress = [(CGEventType.keyDown, false)] +
+            Array(repeating: (CGEventType.keyDown, true), count: 70) +
+            [(CGEventType.keyUp, false)]
+        let heldToggleCount = heldPress.reduce(into: 0) { count, event in
+            if CapsLockEventClassifier.classify(
+                type: event.0, keyCode: remappedCaps, isAutorepeat: event.1
+            ) == .toggleAndConsume {
+                count += 1
+            }
+        }
+        guard heldToggleCount == 1 else {
+            fputs("FAIL: holding remapped Caps Lock toggled \(heldToggleCount) times\n", stderr)
+            exit(1)
+        }
+
         let longPressSequence: [CGEventType] = [.flagsChanged, .keyDown, .keyUp]
         let longPressToggleCount = longPressSequence.reduce(into: 0) { count, type in
             if CapsLockEventClassifier.classify(type: type, keyCode: caps)

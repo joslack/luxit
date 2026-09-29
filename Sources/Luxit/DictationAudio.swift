@@ -27,6 +27,12 @@ struct DictationAudioMetrics {
     }
 
     private var channels: [Channel] = []
+    private var capturedSeconds: TimeInterval = 0
+    private var lastVoicedAt: TimeInterval = 0
+
+    /// Seconds of captured audio since any channel last carried voice-level
+    /// signal. Used only to end unattended dictations; it never trims audio.
+    var trailingSilence: TimeInterval { capturedSeconds - lastVoicedAt }
 
     var selectedChannel: Int? {
         guard !channels.isEmpty else { return nil }
@@ -52,6 +58,8 @@ struct DictationAudioMetrics {
         guard channels.count == channelCount else { return nil }
         var loudest = 0
         var loudestEnergy: Double = -1
+        var voiced = false
+        let seconds = Double(count) / buffer.format.sampleRate
         for channel in 0..<channelCount {
             var energy: Double = 0
             for frame in 0..<count {
@@ -62,10 +70,13 @@ struct DictationAudioMetrics {
             channels[channel].energy += energy / buffer.format.sampleRate
             channels[channel].peakLevel = max(channels[channel].peakLevel, rms)
             if rms >= 0.006 {
-                channels[channel].voicedSeconds += Double(count) / buffer.format.sampleRate
+                channels[channel].voicedSeconds += seconds
+                voiced = true
             }
             if energy > loudestEnergy { loudest = channel; loudestEnergy = energy }
         }
+        capturedSeconds += seconds
+        if voiced { lastVoicedAt = capturedSeconds }
         return loudest
     }
 }

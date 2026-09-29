@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import Carbon.HIToolbox
 import AVFoundation
 import Darwin
 import Foundation
@@ -1488,6 +1489,12 @@ private final class AudioRecorder {
         }
     }
 
+    var trailingSilence: TimeInterval {
+        metricsLock.lock()
+        defer { metricsLock.unlock() }
+        return metrics.trailingSilence
+    }
+
     func stop() -> RecordedAudio? {
         voiceAnalyzer.stop()
         engine.inputNode.removeTap(onBus: 0)
@@ -2445,21 +2452,75 @@ private final class CapsLockRemapper {
     }
 }
 
+/// Secure Event Input (password fields, password managers, some terminals
+/// and enterprise agents) hides key-downs from every event tap. Luxit cannot
+/// and must not bypass it, but it can say which app is holding it.
+private enum SecureEventInput {
+    static var owner: (active: Bool, name: String?) {
+        guard IsSecureEventInputEnabled() else { return (false, nil) }
+        let session = CGSessionCopyCurrentDictionary() as? [String: Any]
+        let pid = (session?["kCGSSessionSecureInputPID"] as? NSNumber)?.int32Value
+        let name = pid.flatMap { NSRunningApplication(processIdentifier: $0)?.localizedName }
+        return (true, name)
+    }
+
+    static var sessionOnConsole: Bool {
+        let session = CGSessionCopyCurrentDictionary() as? [String: Any]
+        return (session?[kCGSessionOnConsoleKey as String] as? Bool) ?? true
+    }
+}
+
+/// Owns the global keyboard event tap.
+///
+/// The tap filters every key event on the Mac, so its callback must never
+/// wait on application work. It runs on a dedicated high-priority thread and
+/// only hands presses to the main queue. Previously it shared the main run
+/// loop with audio start-up (1–3 s on some devices) and Accessibility queries,
+/// which delayed all typing system-wide and made macOS disable the tap.
 private final class GlobalCapsLock {
     struct PressTiming {
         let hardwareEventUptimeNanoseconds: UInt64
         let callbackUptimeNanoseconds: UInt64
     }
 
+    // Shared with the tap thread; guarded by `lock`.
+    private let lock = NSLock()
     private var eventTap: CFMachPort?
+    private var lastKeyDownUptime: TimeInterval?
+
+    // Main thread only.
     private var runLoopSource: CFRunLoopSource?
+    private var createdUptime: TimeInterval = 0
     private let remapper = CapsLockRemapper()
     private(set) var immediateMappingActive = false
     var onPress: ((PressTiming) -> Void)?
 
+    private let tapRunLoop: CFRunLoop = {
+        var runLoop: CFRunLoop?
+        let ready = DispatchSemaphore(value: 0)
+        let thread = Thread {
+            runLoop = CFRunLoopGetCurrent()
+            // A port keeps the run loop alive while no tap is installed.
+            RunLoop.current.add(NSMachPort(), forMode: .default)
+            ready.signal()
+            while true { RunLoop.current.run(mode: .default, before: .distantFuture) }
+        }
+        thread.name = "com.joslack.luxit.keyboard-tap"
+        thread.qualityOfService = .userInteractive
+        thread.start()
+        ready.wait()
+        return runLoop!
+    }()
+
+    private var currentTap: CFMachPort? {
+        lock.lock()
+        defer { lock.unlock() }
+        return eventTap
+    }
+
     var isListening: Bool {
-        guard let eventTap else { return false }
-        return CGEvent.tapIsEnabled(tap: eventTap)
+        guard let tap = currentTap else { return false }
+        return CGEvent.tapIsEnabled(tap: tap)
     }
 
     /// Input Monitoring has no dependable callback-based status API. A live
@@ -2484,6 +2545,24 @@ private final class GlobalCapsLock {
         return true
     }
 
+    func healthObservation(secureInputActive: Bool) -> KeyboardTapHealth.Observation {
+        let now = ProcessInfo.processInfo.systemUptime
+        lock.lock()
+        let tap = eventTap
+        let lastKeyDown = lastKeyDownUptime
+        lock.unlock()
+        return KeyboardTapHealth.Observation(
+            sessionActive: SecureEventInput.sessionOnConsole,
+            tapExists: tap != nil,
+            tapEnabled: tap.map { CGEvent.tapIsEnabled(tap: $0) } ?? false,
+            secureInputActive: secureInputActive,
+            tapAge: now - createdUptime,
+            secondsSinceHardwareKeyDown: CGEventSource.secondsSinceLastEventType(
+                .hidSystemState, eventType: .keyDown),
+            secondsSinceTapKeyDown: lastKeyDown.map { now - $0 }
+        )
+    }
+
     func start() -> Bool {
         if isListening {
             return true
@@ -2497,58 +2576,85 @@ private final class GlobalCapsLock {
             guard let userInfo else {
                 return Unmanaged.passUnretained(event)
             }
-            let owner = Unmanaged<GlobalCapsLock>.fromOpaque(userInfo).takeUnretainedValue()
-            if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-                if let tap = owner.eventTap {
-                    CGEvent.tapEnable(tap: tap, enable: true)
-                }
-                DispatchQueue.main.async {
-                    DiagnosticLog.write("Keyboard event tap re-enabled from disabled callback")
-                }
-                return Unmanaged.passUnretained(event)
-            }
-
-            let disposition = CapsLockEventClassifier.classify(
-                type: type,
-                keyCode: event.getIntegerValueField(.keyboardEventKeycode)
-            )
-            switch disposition {
-            case .toggleAndConsume:
-                // This source is installed on the main run loop. Handle the
-                // toggle now instead of adding an avoidable queue turn.
-                owner.onPress?(PressTiming(
-                    hardwareEventUptimeNanoseconds: event.timestamp,
-                    callbackUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds
-                ))
-                return nil
-            case .consume:
-                return nil
-            case .passThrough:
-                // Caps Lock is dedicated to dictation. Strip Alpha Shift from
-                // every ordinary keyboard event so it never capitalizes text,
-                // even while the physical Caps LED/state is on for recording.
-                var flags = event.flags
-                flags.remove(.maskAlphaShift)
-                event.flags = flags
-                return Unmanaged.passUnretained(event)
-            }
+            return Unmanaged<GlobalCapsLock>.fromOpaque(userInfo)
+                .takeUnretainedValue()
+                .handle(type: type, event: event)
         }
 
-        eventTap = CGEvent.tapCreate(
+        guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
             place: .headInsertEventTap,
             options: .defaultTap,
             eventsOfInterest: mask,
             callback: callback,
             userInfo: Unmanaged.passUnretained(self).toOpaque()
-        )
-        guard let eventTap else { return false }
-        runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, eventTap, 0)
-        if let runLoopSource {
-            CFRunLoopAddSource(CFRunLoopGetMain(), runLoopSource, .commonModes)
+        ) else { return false }
+        guard let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0) else {
+            CFMachPortInvalidate(tap)
+            return false
         }
-        CGEvent.tapEnable(tap: eventTap, enable: true)
+        lock.lock()
+        eventTap = tap
+        lastKeyDownUptime = nil
+        lock.unlock()
+        runLoopSource = source
+        createdUptime = ProcessInfo.processInfo.systemUptime
+        CFRunLoopAddSource(tapRunLoop, source, .commonModes)
+        CGEvent.tapEnable(tap: tap, enable: true)
+        CFRunLoopWakeUp(tapRunLoop)
         return true
+    }
+
+    /// Runs on the tap thread. Never block here.
+    private func handle(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
+        if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+            if let tap = currentTap {
+                CGEvent.tapEnable(tap: tap, enable: true)
+            }
+            DiagnosticLog.write(
+                "Keyboard event tap re-enabled after " +
+                (type == .tapDisabledByTimeout ? "timeout" : "user input")
+            )
+            return Unmanaged.passUnretained(event)
+        }
+        if type == .keyDown {
+            let now = ProcessInfo.processInfo.systemUptime
+            lock.lock()
+            lastKeyDownUptime = now
+            lock.unlock()
+        }
+
+        let disposition = CapsLockEventClassifier.classify(
+            type: type,
+            keyCode: event.getIntegerValueField(.keyboardEventKeycode),
+            isAutorepeat: event.getIntegerValueField(.keyboardEventAutorepeat) != 0
+        )
+        switch disposition {
+        case .toggleAndConsume:
+            let timing = PressTiming(
+                hardwareEventUptimeNanoseconds: event.timestamp,
+                callbackUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds
+            )
+            DispatchQueue.main.async { [weak self] in self?.onPress?(timing) }
+            return nil
+        case .consume:
+            return nil
+        case .passThrough:
+            // Caps Lock is dedicated to dictation. Strip Alpha Shift from
+            // every ordinary keyboard event so it never capitalizes text,
+            // even while the physical Caps LED/state is on for recording.
+            var flags = event.flags
+            flags.remove(.maskAlphaShift)
+            event.flags = flags
+            return Unmanaged.passUnretained(event)
+        }
+    }
+
+    /// Rebuilds only the tap. Unlike `recreate()`, this never touches the
+    /// HID mapping or Caps LED, so it is safe during a recording.
+    func restartTap() -> Bool {
+        invalidateEventTap()
+        return start()
     }
 
     func recreate() -> Bool {
@@ -2585,14 +2691,18 @@ private final class GlobalCapsLock {
     }
 
     private func invalidateEventTap() {
+        lock.lock()
+        let tap = eventTap
+        eventTap = nil
+        lastKeyDownUptime = nil
+        lock.unlock()
         if let runLoopSource {
-            CFRunLoopRemoveSource(CFRunLoopGetMain(), runLoopSource, .commonModes)
+            CFRunLoopRemoveSource(tapRunLoop, runLoopSource, .commonModes)
         }
-        if let eventTap {
-            CFMachPortInvalidate(eventTap)
+        if let tap {
+            CFMachPortInvalidate(tap)
         }
         runLoopSource = nil
-        eventTap = nil
     }
 }
 
@@ -2678,7 +2788,10 @@ private final class AppDelegate:
     private let maximumPendingTranscriptions = 3
     private var statusItem: NSStatusItem!
     private var recordingPresence: RecordingPresenceController?
-    private var permissionsTimer: Timer?
+    private var watchdogTimer: Timer?
+    private var keyboardIssue: String?
+    private var lastDeafTapRebuild: TimeInterval = -.infinity
+    private var dictationActivity: NSObjectProtocol?
     private var statusText = "Ready — model loads when recording starts"
     private var keyboardReady = false
     private var exitRequested = false
@@ -2715,6 +2828,9 @@ private final class AppDelegate:
     func applicationDidFinishLaunching(_ notification: Notification) {
         DiagnosticLog.write("App launched")
         NSApp.setActivationPolicy(.accessory)
+        // Caret lookup asks the focused app over Accessibility. A busy app
+        // would otherwise hold Luxit's main thread for the 6 s default.
+        AXUIElementSetMessagingTimeout(AXUIElementCreateSystemWide(), 0.25)
         configureTranscriptHistory()
         setupStatusItem()
         createDefaultPrompt()
@@ -2751,6 +2867,90 @@ private final class AppDelegate:
                 self.keyboardRecovery.request(.wake)
             }
         }
+
+        let stopNotifications: [(NotificationCenter, Notification.Name, DictationAutoStop)] = [
+            (NSWorkspace.shared.notificationCenter, NSWorkspace.willSleepNotification, .sleep),
+            (NSWorkspace.shared.notificationCenter, NSWorkspace.sessionDidResignActiveNotification, .screenLocked),
+            (DistributedNotificationCenter.default(), Notification.Name("com.apple.screenIsLocked"), .screenLocked)
+        ]
+        for (center, name, reason) in stopNotifications {
+            center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                self?.autoStopDictation(reason)
+            }
+        }
+        startWatchdog()
+    }
+
+    /// One low-frequency heartbeat keeps the two unattended failure modes in
+    /// check: a keyboard tap that silently stopped hearing Caps Lock, and a
+    /// dictation that nobody is attending.
+    private func startWatchdog() {
+        watchdogTimer?.invalidate()
+        let timer = Timer(timeInterval: 2, repeats: true) { [weak self] _ in
+            guard let self, !self.exitRequested else { return }
+            self.checkDictationSafety()
+            self.checkKeyboardHealth()
+        }
+        timer.tolerance = 0.5
+        RunLoop.main.add(timer, forMode: .common)
+        watchdogTimer = timer
+    }
+
+    private func checkKeyboardHealth() {
+        let secureInput = SecureEventInput.owner
+        let verdict = KeyboardTapHealth.evaluate(
+            capsLock.healthObservation(secureInputActive: secureInput.active))
+        switch verdict {
+        case .healthy:
+            setKeyboardIssue(nil)
+        case .secureInputBlocked:
+            setKeyboardIssue("Caps Lock paused — Secure Input is on in \(secureInput.name ?? "another app")")
+        case .recreate(let reason):
+            let now = ProcessInfo.processInfo.systemUptime
+            if reason == .deaf {
+                guard now - lastDeafTapRebuild >= 10 else { return }
+                lastDeafTapRebuild = now
+            }
+            let wasReady = keyboardReady
+            keyboardReady = capsLock.restartTap()
+            if keyboardReady || wasReady || reason != .missing {
+                DiagnosticLog.write("Keyboard watchdog rebuilt tap reason=\(reason.rawValue) success=\(keyboardReady)")
+            }
+            if keyboardReady {
+                setKeyboardIssue(nil)
+                if !capsLock.immediateMappingActive { keyboardRecovery.request(.mappingUnavailable) }
+            } else {
+                setKeyboardIssue("Caps Lock needs Accessibility and Input Monitoring — click to fix")
+            }
+        }
+    }
+
+    private func setKeyboardIssue(_ issue: String?) {
+        guard issue != keyboardIssue else { return }
+        keyboardIssue = issue
+        DiagnosticLog.write("Keyboard status: \(issue ?? "listening")")
+        // Never overwrite recording or transcription progress.
+        guard state == .idle, pendingTranscriptions == 0 else { return }
+        if let issue {
+            setStatus(issue, symbol: "exclamationmark.triangle.fill")
+        } else {
+            setStatus("Ready — Caps Lock to dictate", symbol: "mic.circle.fill")
+        }
+    }
+
+    private func checkDictationSafety() {
+        guard state == .recording,
+              let reason = DictationAutoStop.evaluate(
+                elapsed: Date().timeIntervalSince(recordingStartedAt),
+                trailingSilence: recorder.trailingSilence
+              ) else { return }
+        autoStopDictation(reason)
+    }
+
+    private func autoStopDictation(_ reason: DictationAutoStop) {
+        guard state == .recording else { return }
+        DiagnosticLog.write("Dictation auto-stopped reason=\(reason.logName)")
+        finishRecording(autoStop: reason)
     }
 
     func applicationShouldHandleReopen(
@@ -2762,6 +2962,7 @@ private final class AppDelegate:
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        watchdogTimer?.invalidate()
         keyboardDevices.stop()
         keyboardRecovery.cancel()
         capsLock.stop()
@@ -3305,30 +3506,9 @@ private final class AppDelegate:
             "Permissions accessibility=\(accessibilityTrusted) " +
             "inputMonitoring=\(inputMonitoringTrusted) eventTap=\(started)"
         )
-        if started {
-            permissionsTimer?.invalidate()
-            permissionsTimer = nil
-            if !capsLock.immediateMappingActive {
-                keyboardRecovery.request(.mappingUnavailable)
-            }
-        } else if permissionsTimer == nil {
-            permissionsTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) {
-                [weak self] timer in
-                guard let self else {
-                    timer.invalidate()
-                    return
-                }
-                if self.capsLock.start() {
-                    self.keyboardReady = true
-                    self.setStatus(
-                        "Ready — model loads when recording starts",
-                        symbol: "mic.circle.fill"
-                    )
-                    DiagnosticLog.write("Keyboard event tap became active")
-                    timer.invalidate()
-                    self.permissionsTimer = nil
-                }
-            }
+        // Without a tap, the watchdog keeps retrying until permissions arrive.
+        if started && !capsLock.immediateMappingActive {
+            keyboardRecovery.request(.mappingUnavailable)
         }
     }
 
@@ -3380,11 +3560,12 @@ private final class AppDelegate:
         exitRequested = true
         keyboardDevices.stop()
         keyboardRecovery.cancel()
-        permissionsTimer?.invalidate()
-        permissionsTimer = nil
+        watchdogTimer?.invalidate()
+        watchdogTimer = nil
         if state == .recording, let recorded = recorder.stop() {
             try? FileManager.default.removeItem(at: recorded.url)
             state = .idle
+            endDictationActivity()
         }
         capsLock.stop()
 
@@ -3415,6 +3596,7 @@ private final class AppDelegate:
                 _ = capsLock.retryImmediateMapping()
                 _ = capsLock.start()
                 keyboardDevices.start()
+                startWatchdog()
                 return
             }
         }
@@ -3558,6 +3740,7 @@ private final class AppDelegate:
             try recorder.start { [weak self] level, spectrum, probability in
                 self?.indicator.setAudioLevel(level, spectrum: spectrum, voiceProbability: probability)
             }
+            beginDictationActivity()
             DiagnosticLog.write("Recording started")
             transcriptionEngine.load(profile: selectedModel, modelURL: modelURL) {
                 [weak self] result in
@@ -3591,17 +3774,70 @@ private final class AppDelegate:
         }
     }
 
-    private func finishRecording() {
+    private func finishRecording(autoStop: DictationAutoStop? = nil) {
+        endDictationActivity()
         guard let recorded = recorder.stop() else {
             state = .idle
             refreshActivityUI(recordingEndedWithoutSpeech: true)
             return
         }
         state = .idle
-        queueRecording(recorded, source: .dictation, createdAt: recordingStartedAt)
+        queueRecording(recorded, source: .dictation, createdAt: recordingStartedAt, autoStop: autoStop)
     }
 
-    private func queueRecording(_ recorded: RecordedAudio, source: TranscriptSource, createdAt: Date) {
+    /// Keeps the display (and therefore auto-lock) awake while dictating, so
+    /// a long spoken passage is not cut off by idle timers. The watchdog's
+    /// silence and duration limits bound how long this can be held.
+    private func beginDictationActivity() {
+        guard dictationActivity == nil else { return }
+        dictationActivity = ProcessInfo.processInfo.beginActivity(
+            options: [.userInitiated, .idleDisplaySleepDisabled],
+            reason: "Caps Lock dictation in progress"
+        )
+    }
+
+    private func endDictationActivity() {
+        guard let dictationActivity else { return }
+        ProcessInfo.processInfo.endActivity(dictationActivity)
+        self.dictationActivity = nil
+    }
+
+    /// Transcribes once, and on failure reloads the model and tries again.
+    /// Transient failures (a model unloaded under memory pressure, a GPU
+    /// hiccup) should not cost the user what they just said.
+    private func transcribeDictation(
+        profile: SelectedTranscriptionProfile,
+        wavURL: URL,
+        prompt: String,
+        completion: @escaping (Result<TranscriptionResult, Error>) -> Void
+    ) {
+        transcriptionEngine.transcribe(
+            profile: profile, wavURL: wavURL, vadModelURL: vadModelURL, prompt: prompt
+        ) { [weak self] result in
+            guard case .failure(let error) = result, let self,
+                  let modelURL = self.modelURL(for: profile) else {
+                completion(result)
+                return
+            }
+            DiagnosticLog.write("Transcription failed; reloading model and retrying once: \(error.localizedDescription)")
+            self.transcriptionEngine.load(profile: profile, modelURL: modelURL) { [weak self] loaded in
+                guard let self, case .success = loaded else {
+                    completion(result)
+                    return
+                }
+                self.transcriptionEngine.transcribe(
+                    profile: profile, wavURL: wavURL, vadModelURL: self.vadModelURL,
+                    prompt: prompt, completion: completion)
+            }
+        }
+    }
+
+    private func queueRecording(
+        _ recorded: RecordedAudio,
+        source: TranscriptSource,
+        createdAt: Date,
+        autoStop: DictationAutoStop? = nil
+    ) {
         let profile = selectedModel
         let peakDB = 20 * log10(max(recorded.peakLevel, 0.000_001))
         DiagnosticLog.write(
@@ -3644,22 +3880,21 @@ private final class AppDelegate:
             do {
                 try self.convertToWhisperWAV(cafURL: cafURL, wavURL: wavURL, channel: recorded.channel)
                 let prompt = (try? String(contentsOf: self.promptURL, encoding: .utf8)) ?? ""
-                self.transcriptionEngine.transcribe(
-                    profile: profile,
-                    wavURL: wavURL,
-                    vadModelURL: self.vadModelURL,
-                    prompt: prompt
-                ) { [weak self] result in
-                    try? FileManager.default.removeItem(at: cafURL)
-                    try? FileManager.default.removeItem(at: wavURL)
-                    self?.finishTranscription(
-                        result.map(\.text),
-                        jobID: jobID,
-                        source: source,
-                        createdAt: createdAt,
-                        audioDuration: recorded.duration,
-                        processingStartedAt: processingStartedAt
-                    )
+                DispatchQueue.main.async {
+                    self.transcribeDictation(profile: profile, wavURL: wavURL, prompt: prompt) {
+                        [weak self] result in
+                        try? FileManager.default.removeItem(at: cafURL)
+                        try? FileManager.default.removeItem(at: wavURL)
+                        self?.finishTranscription(
+                            result.map(\.text),
+                            jobID: jobID,
+                            source: source,
+                            createdAt: createdAt,
+                            audioDuration: recorded.duration,
+                            processingStartedAt: processingStartedAt,
+                            autoStop: autoStop
+                        )
+                    }
                 }
             } catch {
                 try? FileManager.default.removeItem(at: cafURL)
@@ -3671,7 +3906,8 @@ private final class AppDelegate:
                         source: source,
                         createdAt: createdAt,
                         audioDuration: recorded.duration,
-                        processingStartedAt: processingStartedAt
+                        processingStartedAt: processingStartedAt,
+                        autoStop: autoStop
                     )
                 }
             }
@@ -3703,10 +3939,12 @@ private final class AppDelegate:
         source: TranscriptSource,
         createdAt: Date,
         audioDuration: TimeInterval,
-        processingStartedAt: Date
+        processingStartedAt: Date,
+        autoStop: DictationAutoStop? = nil
     ) {
         pendingTranscriptions = max(0, pendingTranscriptions - 1)
         var errorMessage: String?
+        var idleMessage = autoStop?.statusMessage
         switch result {
         case .success(let rawText):
             let text = correctedTranscription(TranscriptionResult(text: rawText)).text
@@ -3725,8 +3963,9 @@ private final class AppDelegate:
                     transcriptModel.error = "Could not save history: \(error.localizedDescription). Copy this transcript before quitting."
                 }
                 transcriptModel.selectedID = entry.id
-                if source == .dictation {
-                    pasteAtCursor(text + " ")
+                if source == .dictation && autoStop == nil && !pasteAtCursor(text + " ") {
+                    idleMessage = "Copied to clipboard — allow Accessibility to paste automatically"
+                    DiagnosticLog.write("Transcription job \(jobID) copied; Accessibility unavailable for paste")
                 }
                 DiagnosticLog.write("Transcription job \(jobID) completed (\(text.count) characters)")
             } else {
@@ -3748,7 +3987,7 @@ private final class AppDelegate:
                 symbol: "exclamationmark.triangle.fill"
             )
         } else {
-            refreshActivityUI()
+            refreshActivityUI(idleMessage: idleMessage)
         }
 
         pumpRecordingChunks()
@@ -3805,8 +4044,17 @@ private final class AppDelegate:
         }
     }
 
-    private func pasteAtCursor(_ text: String) {
+    /// Returns false when the text could only be placed on the clipboard.
+    /// Without Accessibility the synthetic ⌘V is silently dropped, so the
+    /// transcript stays on the clipboard instead of being restored away.
+    @discardableResult
+    private func pasteAtCursor(_ text: String) -> Bool {
         let pasteboard = NSPasteboard.general
+        guard AXIsProcessTrusted() else {
+            pasteboard.clearContents()
+            pasteboard.setString(text, forType: .string)
+            return false
+        }
         let snapshot = PasteboardSnapshot(pasteboard)
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
@@ -3825,6 +4073,7 @@ private final class AppDelegate:
                 snapshot.restore(to: pasteboard)
             }
         }
+        return true
     }
 }
 

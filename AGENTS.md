@@ -14,6 +14,14 @@ Mac. Never add telemetry or a network transcription path.
 
 - `Sources/Luxit/main.swift` owns the AppKit lifecycle, recording state, global
   shortcut, insertion, queueing, and indicator orchestration.
+- The global keyboard tap runs on its own thread and must never block or call
+  into app state; it only posts presses to the main queue. Autorepeat
+  key-downs never toggle dictation. `KeyboardTapHealth.swift` decides when
+  the watchdog rebuilds a disabled or deaf tap; Secure Event Input is
+  reported, never bypassed.
+- Caps Lock dictation must not run unattended: `DictationSafety.swift` ends it
+  after sustained silence, a duration limit, sleep, or screen lock. Automatic
+  stops transcribe to history but never paste.
 - `VoiceOrbGeometry.swift` must remain deterministic for identical inputs.
 - `MetalOrbRenderer.swift` is the primary orb renderer. Keep the AppKit fallback
   in `main.swift` visually and behaviorally equivalent.
