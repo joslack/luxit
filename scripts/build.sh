@@ -48,6 +48,7 @@ swiftc \
   -target arm64-apple-macosx26.0 \
   -module-cache-path "$module_cache" \
   -framework AppKit \
+  -framework Carbon \
   -framework ApplicationServices \
   -framework Accelerate \
   -framework AudioToolbox \
@@ -77,8 +78,10 @@ swiftc \
   "$project_dir/Sources/Luxit/CapsLockEventLogic.swift" \
   "$project_dir/Sources/Luxit/KeyboardDeviceMonitor.swift" \
   "$project_dir/Sources/Luxit/KeyboardRecovery.swift" \
+  "$project_dir/Sources/Luxit/KeyboardTapHealth.swift" \
   "$project_dir/Sources/Luxit/AudioInputDevice.swift" \
   "$project_dir/Sources/Luxit/DictationAudio.swift" \
+  "$project_dir/Sources/Luxit/DictationSafety.swift" \
   "$project_dir/Sources/Luxit/LogSpectrumAnalyzer.swift" \
   "$project_dir/Sources/Luxit/VoiceAnimationFilter.swift" \
   "$project_dir/Sources/Luxit/VoiceAnimationEnvelope.swift" \

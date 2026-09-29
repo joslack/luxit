@@ -68,6 +68,13 @@ swiftc \
   "$project_dir/Tests/KeyboardRecoveryTests.swift" \
   -o "$build_dir/KeyboardRecoveryTests"
 
+swiftc -swift-version 5 -sdk "$sdk_path" -target arm64-apple-macosx26.0 \
+  -module-cache-path "$module_cache" \
+  "$project_dir/Sources/Luxit/KeyboardTapHealth.swift" \
+  "$project_dir/Sources/Luxit/DictationSafety.swift" \
+  "$project_dir/Tests/KeyboardTapHealthTests.swift" -o "$build_dir/KeyboardTapHealthTests"
+"$build_dir/KeyboardTapHealthTests"
+
 "$build_dir/KeyboardRecoveryTests"
 
 swiftc \
