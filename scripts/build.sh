@@ -82,6 +82,7 @@ swiftc \
   "$project_dir/Sources/Luxit/AudioInputDevice.swift" \
   "$project_dir/Sources/Luxit/DictationAudio.swift" \
   "$project_dir/Sources/Luxit/DictationSafety.swift" \
+  "$project_dir/Sources/Luxit/DictationSegmenter.swift" \
   "$project_dir/Sources/Luxit/LogSpectrumAnalyzer.swift" \
   "$project_dir/Sources/Luxit/VoiceAnimationFilter.swift" \
   "$project_dir/Sources/Luxit/VoiceAnimationEnvelope.swift" \

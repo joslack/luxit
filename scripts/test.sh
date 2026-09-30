@@ -106,8 +106,17 @@ swiftc \
 swiftc -swift-version 5 -sdk "$sdk_path" -target arm64-apple-macosx26.0 \
   -module-cache-path "$module_cache" -framework AVFoundation \
   "$project_dir/Sources/Luxit/DictationAudio.swift" \
+  "$project_dir/Sources/Luxit/DictationSegmenter.swift" \
+  "$project_dir/Sources/Luxit/ModelCatalog.swift" \
   "$project_dir/Tests/DictationAudioTests.swift" -o "$build_dir/DictationAudioTests"
 "$build_dir/DictationAudioTests"
+
+swiftc -swift-version 5 -sdk "$sdk_path" -target arm64-apple-macosx26.0 \
+  -module-cache-path "$module_cache" \
+  "$project_dir/Sources/Luxit/DictationSegmenter.swift" \
+  "$project_dir/Sources/Luxit/ModelCatalog.swift" \
+  "$project_dir/Tests/DictationSegmenterTests.swift" -o "$build_dir/DictationSegmenterTests"
+"$build_dir/DictationSegmenterTests"
 
 swiftc \
   -swift-version 5 \

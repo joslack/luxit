@@ -22,6 +22,12 @@ Mac. Never add telemetry or a network transcription path.
 - Caps Lock dictation must not run unattended: `DictationSafety.swift` ends it
   after sustained silence, a duration limit, sleep, or screen lock. Automatic
   stops transcribe to history but never paste.
+- Long dictations are transcribed in pieces while the speaker talks:
+  `DictationSegmenter.swift` cuts 16 kHz audio at pauses (8–30 s pieces), so
+  the final press only waits for the remainder. Pieces never paste on their
+  own; they assemble into one paste and one history entry, and any piece
+  failure falls back to the whole recording. Whole-file Parakeet on long audio
+  was both slower and observed to drop a 20-second span.
 - `VoiceOrbGeometry.swift` must remain deterministic for identical inputs.
 - `MetalOrbRenderer.swift` is the primary orb renderer. Keep the AppKit fallback
   in `main.swift` visually and behaviorally equivalent.
