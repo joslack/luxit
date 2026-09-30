@@ -7,6 +7,9 @@ struct RecordedAudio {
     let channel: Int
     let peakLevel: Float
     let voicedSeconds: TimeInterval
+    /// Pieces already handed out while recording; the rest is `tail`.
+    var streamedSegments = 0
+    var tail: DictationSegment? = nil
 
     var isEmptyOrTooShort: Bool {
         // The local transcription backend runs speech detection. An additional

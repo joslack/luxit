@@ -1343,6 +1343,13 @@ private final class AudioRecorder {
     private var startedAt: Date?
     private var metrics = DictationAudioMetrics()
     private var isPrepared = false
+    /// Pieces of the dictation are cut and resampled here, off the audio
+    /// thread. Everything below is confined to `segmentQueue`.
+    private let segmentQueue = DispatchQueue(label: "com.joslack.luxit.dictation-segmenter", qos: .userInitiated)
+    private var segmenter = DictationSegmenter()
+    private var segmentConverter: AVAudioConverter?
+    private var segmentHandler: ((DictationSegment) -> Void)?
+    private var startRebuiltEngine = false
 
     init() { observeConfigurationChanges() }
 
@@ -1360,6 +1367,16 @@ private final class AudioRecorder {
             // stop or release an engine inside its configuration notification.
             DispatchQueue.main.async { [weak self, weak observedEngine] in
                 guard let self, let observedEngine, self.engine === observedEngine else { return }
+                // Starting the input itself posts a configuration change. If
+                // the engine kept running on the same default input, it is
+                // still good: rebuilding it on every press cost ~90 ms and
+                // clipped the first syllable.
+                if self.startedAt != nil, observedEngine.isRunning,
+                   let device = try? SystemAudioInput.preferredDevice(),
+                   !self.routeTracker.requiresEngineReplacement(for: device.id) {
+                    DiagnosticLog.write("Microphone configuration changed; recorder still running on the same input")
+                    return
+                }
                 self.routeTracker.markConfigurationChanged()
                 self.isPrepared = false
                 DiagnosticLog.write("Microphone configuration changed; recorder will rebuild")
@@ -1370,8 +1387,9 @@ private final class AudioRecorder {
         }
     }
 
-    private func replaceEngineIfNeeded(for device: AudioInputDevice) {
-        guard routeTracker.requiresEngineReplacement(for: device.id) else { return }
+    @discardableResult
+    private func replaceEngineIfNeeded(for device: AudioInputDevice) -> Bool {
+        guard routeTracker.requiresEngineReplacement(for: device.id) else { return false }
         engine.stop()
         engine.reset()
         engine = AVAudioEngine()
@@ -1379,6 +1397,7 @@ private final class AudioRecorder {
         routeTracker.invalidate()
         isPrepared = false
         DiagnosticLog.write("Audio input or configuration changed; rebuilt recorder id=\(device.id)")
+        return true
     }
 
     func requestPermission() {
@@ -1417,10 +1436,33 @@ private final class AudioRecorder {
         }
     }
 
-    func start(level: @escaping VoiceActivityAnalyzer.Handler) throws {
+    /// `onSegment` receives each finished piece of the dictation on the main
+    /// queue while recording continues; `stop()` returns the remainder.
+    func start(
+        level: @escaping VoiceActivityAnalyzer.Handler,
+        onSegment: @escaping (DictationSegment) -> Void
+    ) throws {
+        segmentQueue.sync {
+            segmenter = DictationSegmenter()
+            segmentConverter = nil
+            segmentHandler = onSegment
+        }
+        do {
+            try startEngine(level: level)
+        } catch {
+            // The kept engine may be stale after a route change that did not
+            // interrupt the last recording. Rebuild once before giving up.
+            guard !startRebuiltEngine else { throw error }
+            DiagnosticLog.write("Recorder start failed on the kept engine; rebuilding: \(error.localizedDescription)")
+            routeTracker.markConfigurationChanged()
+            try startEngine(level: level)
+        }
+    }
+
+    private func startEngine(level: @escaping VoiceActivityAnalyzer.Handler) throws {
         let beganAt = CACurrentMediaTime()
         let device = try SystemAudioInput.preferredDevice()
-        replaceEngineIfNeeded(for: device)
+        startRebuiltEngine = replaceEngineIfNeeded(for: device)
 
         let input = engine.inputNode
         try SystemAudioInput.bind(input, to: device)
@@ -1454,10 +1496,16 @@ private final class AudioRecorder {
 
             self.metricsLock.lock()
             let channel = self.metrics.append(buffer)
+            let selected = self.metrics.selectedChannel
             self.metricsLock.unlock()
             if let channel, let channels = buffer.floatChannelData {
                 self.voiceAnalyzer.submit(samples: channels[channel], count: Int(buffer.frameLength),
                                           sampleRate: buffer.format.sampleRate, stride: buffer.stride)
+            }
+            if let selected, let channels = buffer.floatChannelData {
+                let samples = (0..<Int(buffer.frameLength)).map { channels[selected][$0 * buffer.stride] }
+                let rate = buffer.format.sampleRate
+                self.segmentQueue.async { self.segment(samples, sampleRate: rate) }
             }
         }
 
@@ -1495,11 +1543,50 @@ private final class AudioRecorder {
         return metrics.trailingSilence
     }
 
+    /// Resamples one tap buffer to 16 kHz mono and hands finished pieces to
+    /// the main queue. Runs on `segmentQueue`.
+    private func segment(_ samples: [Float], sampleRate: Double) {
+        guard let handler = segmentHandler, !samples.isEmpty else { return }
+        if segmentConverter?.inputFormat.sampleRate != sampleRate {
+            guard let input = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 1),
+                  let output = AVAudioFormat(commonFormat: .pcmFormatFloat32,
+                                             sampleRate: Double(DictationSegmenter.sampleRate),
+                                             channels: 1, interleaved: false) else { return }
+            segmentConverter = AVAudioConverter(from: input, to: output)
+        }
+        guard let converter = segmentConverter,
+              let source = AVAudioPCMBuffer(pcmFormat: converter.inputFormat,
+                                            frameCapacity: AVAudioFrameCount(samples.count)),
+              let target = AVAudioPCMBuffer(pcmFormat: converter.outputFormat, frameCapacity: AVAudioFrameCount(
+                  Double(samples.count) * converter.outputFormat.sampleRate / sampleRate) + 64)
+        else { return }
+        source.frameLength = AVAudioFrameCount(samples.count)
+        samples.withUnsafeBufferPointer { source.floatChannelData![0].update(from: $0.baseAddress!, count: samples.count) }
+        var supplied = false
+        var error: NSError?
+        converter.convert(to: target, error: &error) { _, status in
+            if supplied { status.pointee = .noDataNow; return nil }
+            supplied = true
+            status.pointee = .haveData
+            return source
+        }
+        guard error == nil, let data = target.floatChannelData else { return }
+        let resampled = Array(UnsafeBufferPointer(start: data[0], count: Int(target.frameLength)))
+        for piece in segmenter.append(resampled) {
+            DispatchQueue.main.async { handler(piece) }
+        }
+    }
+
     func stop() -> RecordedAudio? {
         voiceAnalyzer.stop()
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
         file = nil
+        let (streamed, tail) = segmentQueue.sync { () -> (Int, DictationSegment?) in
+            segmentHandler = nil
+            let streamed = segmenter.sealedCount
+            return (streamed, segmenter.finish())
+        }
         guard let recordingURL else { return nil }
         let duration = max(0, Date().timeIntervalSince(startedAt ?? Date()))
         metricsLock.lock()
@@ -1512,7 +1599,9 @@ private final class AudioRecorder {
             duration: duration,
             channel: metrics.selectedChannel ?? 0,
             peakLevel: metrics.peakLevel,
-            voicedSeconds: metrics.voicedSeconds
+            voicedSeconds: metrics.voicedSeconds,
+            streamedSegments: streamed,
+            tail: tail
         )
     }
 }
@@ -2776,6 +2865,8 @@ private final class AppDelegate:
     private var sessionChunkInFlight = false
     private var recordingSessionsRoot: URL { supportDirectory.appendingPathComponent("RecordingSessions") }
     private var recordingStartedAt = Date()
+    /// Pieces of the dictation in progress, transcribed while recording.
+    private var dictationPieces: DictationPieces?
     private var recordingClock: Timer?
     private let computerLevelMailbox = LatestAudioLevel()
     private let audioPreparationQueue = DispatchQueue(
@@ -3737,9 +3828,13 @@ private final class AppDelegate:
         DiagnosticLog.write("Recording start acknowledged")
 
         do {
-            try recorder.start { [weak self] level, spectrum, probability in
+            let pieces = DictationPieces(profile: selectedModel)
+            dictationPieces = pieces
+            try recorder.start(level: { [weak self] level, spectrum, probability in
                 self?.indicator.setAudioLevel(level, spectrum: spectrum, voiceProbability: probability)
-            }
+            }, onSegment: { [weak self] segment in
+                self?.transcribePiece(segment, of: pieces)
+            })
             beginDictationActivity()
             DiagnosticLog.write("Recording started")
             transcriptionEngine.load(profile: selectedModel, modelURL: modelURL) {
@@ -3777,12 +3872,16 @@ private final class AppDelegate:
     private func finishRecording(autoStop: DictationAutoStop? = nil) {
         endDictationActivity()
         guard let recorded = recorder.stop() else {
+            dictationPieces = nil
             state = .idle
             refreshActivityUI(recordingEndedWithoutSpeech: true)
             return
         }
         state = .idle
-        queueRecording(recorded, source: .dictation, createdAt: recordingStartedAt, autoStop: autoStop)
+        let pieces = dictationPieces
+        dictationPieces = nil
+        queueRecording(recorded, source: .dictation, createdAt: recordingStartedAt, autoStop: autoStop,
+                       pieces: pieces)
     }
 
     /// Keeps the display (and therefore auto-lock) awake while dictating, so
@@ -3836,7 +3935,8 @@ private final class AppDelegate:
         _ recorded: RecordedAudio,
         source: TranscriptSource,
         createdAt: Date,
-        autoStop: DictationAutoStop? = nil
+        autoStop: DictationAutoStop? = nil,
+        pieces: DictationPieces? = nil
     ) {
         let profile = selectedModel
         let peakDB = 20 * log10(max(recorded.peakLevel, 0.000_001))
@@ -3874,6 +3974,43 @@ private final class AppDelegate:
             "(pending=\(pendingTranscriptions))"
         )
 
+        let finish: (Result<String, Error>) -> Void = { [weak self] result in
+            try? FileManager.default.removeItem(at: cafURL)
+            self?.finishTranscription(
+                result, jobID: jobID, source: source, createdAt: createdAt,
+                audioDuration: recorded.duration, processingStartedAt: processingStartedAt, autoStop: autoStop)
+        }
+        if let pieces, pieces.profile == profile, recorded.streamedSegments > 0 {
+            // Earlier pieces were transcribed while the speaker talked; only
+            // the remainder is left. Any failure falls back to the whole file.
+            pieces.expectedCount = recorded.streamedSegments + (recorded.tail == nil ? 0 : 1)
+            pieces.onComplete = { [weak self] result in
+                guard let self else { return }
+                switch result {
+                case .success(let text):
+                    DiagnosticLog.write(String(
+                        format: "Transcription job %d assembled from %d pieces; last piece %.1fs",
+                        jobID, pieces.expectedCount ?? 0, recorded.tail?.duration ?? 0))
+                    finish(.success(text))
+                case .failure(let error):
+                    DiagnosticLog.write("Dictation piece failed (\(error.localizedDescription)); transcribing the whole recording")
+                    self.transcribeRecording(recorded, profile: profile, completion: finish)
+                }
+            }
+            if let tail = recorded.tail { transcribePiece(tail, of: pieces) }
+            pieces.completeIfReady()
+            return
+        }
+        transcribeRecording(recorded, profile: profile, completion: finish)
+    }
+
+    /// Transcribes the entire captured file in one pass.
+    private func transcribeRecording(
+        _ recorded: RecordedAudio,
+        profile: SelectedTranscriptionProfile,
+        completion: @escaping (Result<String, Error>) -> Void
+    ) {
+        let cafURL = recorded.url
         audioPreparationQueue.async { [weak self] in
             guard let self else { return }
             let wavURL = cafURL.deletingPathExtension().appendingPathExtension("wav")
@@ -3881,35 +4018,46 @@ private final class AppDelegate:
                 try self.convertToWhisperWAV(cafURL: cafURL, wavURL: wavURL, channel: recorded.channel)
                 let prompt = (try? String(contentsOf: self.promptURL, encoding: .utf8)) ?? ""
                 DispatchQueue.main.async {
-                    self.transcribeDictation(profile: profile, wavURL: wavURL, prompt: prompt) {
-                        [weak self] result in
-                        try? FileManager.default.removeItem(at: cafURL)
+                    self.transcribeDictation(profile: profile, wavURL: wavURL, prompt: prompt) { result in
                         try? FileManager.default.removeItem(at: wavURL)
-                        self?.finishTranscription(
-                            result.map(\.text),
-                            jobID: jobID,
-                            source: source,
-                            createdAt: createdAt,
-                            audioDuration: recorded.duration,
-                            processingStartedAt: processingStartedAt,
-                            autoStop: autoStop
-                        )
+                        completion(result.map(\.text))
                     }
                 }
             } catch {
-                try? FileManager.default.removeItem(at: cafURL)
                 try? FileManager.default.removeItem(at: wavURL)
-                DispatchQueue.main.async { [weak self] in
-                    self?.finishTranscription(
-                        .failure(error),
-                        jobID: jobID,
-                        source: source,
-                        createdAt: createdAt,
-                        audioDuration: recorded.duration,
-                        processingStartedAt: processingStartedAt,
-                        autoStop: autoStop
-                    )
+                DispatchQueue.main.async { completion(.failure(error)) }
+            }
+        }
+    }
+
+    /// Transcribes one piece of a dictation, during or after recording.
+    private func transcribePiece(_ segment: DictationSegment, of pieces: DictationPieces) {
+        // A piece with no voiced audio is trailing silence; skipping it also
+        // keeps the model from inventing words from room noise.
+        guard segment.voicedSeconds > 0 else {
+            pieces.record(index: segment.index, result: .success(""))
+            return
+        }
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("luxit-piece-\(UUID().uuidString).wav")
+        let started = Date()
+        audioPreparationQueue.async { [weak self] in
+            guard let self else { return }
+            do {
+                try DictationWAV.write(segment.samples, sampleRate: DictationSegmenter.sampleRate, to: url)
+                let prompt = (try? String(contentsOf: self.promptURL, encoding: .utf8)) ?? ""
+                DispatchQueue.main.async {
+                    self.transcribeDictation(profile: pieces.profile, wavURL: url, prompt: prompt) { result in
+                        try? FileManager.default.removeItem(at: url)
+                        DiagnosticLog.write(String(
+                            format: "Dictation piece %d (%.1fs) transcribed in %.0f ms%@",
+                            segment.index, segment.duration, Date().timeIntervalSince(started) * 1000,
+                            (try? result.get()) == nil ? " with an error" : ""))
+                        pieces.record(index: segment.index, result: result.map(\.text))
+                    }
                 }
+            } catch {
+                DispatchQueue.main.async { pieces.record(index: segment.index, result: .failure(error)) }
             }
         }
     }
